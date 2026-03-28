@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Bell, HelpCircle, AlertCircle, Clock, ExternalLink, MessageCircle, ArrowLeft, ArrowRight, ChevronDown, Calendar, X } from 'lucide-react';
+import { AlertCircle, Clock, ExternalLink, MessageCircle, ArrowLeft, ArrowRight, ChevronDown, Calendar, X } from 'lucide-react';
+import logoImg from '../assets/logo.png';
 
 // --- MOCK DATE HELPERS ---
 const now = new Date();
@@ -206,33 +207,22 @@ export default function Feed() {
 
   return (
     <div className="dashboard-wrapper" onClick={() => { if(openDropdown) setOpenDropdown(null) }}>
-      <header className="header glass-effect fade-in-up">
-        <div className="search-bar">
-          <Search size={22} />
-          <input type="text" placeholder="Search customer sentiment..." style={{fontSize: '16px'}} />
-        </div>
-        <div className="header-actions">
-          <button className="icon-btn hover-glow text-primary">
-            <Bell size={24} />
-            <span className="notification-dot"></span>
-          </button>
-          <button className="icon-btn hover-glow text-primary">
-            <HelpCircle size={24} />
-          </button>
-          <img src="https://i.pravatar.cc/150?img=47" alt="Profile" className="profile-avatar border-glow" />
-        </div>
-      </header>
 
       <div className="dashboard-container fade-in-up" style={{animationDelay: '0.1s'}}>
         
-        {/* Title Area */}
+        {/* Title Area with Logo */}
         <div className="feed-header mb-8 stun-item">
-          <h1 className="feed-title text-primary" style={{fontSize: '36px'}}>Interactive Feed</h1>
-          <p className="section-sub text-fade mt-2" style={{fontSize: '18px'}}>Real-time sentiment processing and response orchestration for multi-channel feedback.</p>
+          <div className="feed-header-content">
+            <img src={logoImg} alt="Sentinel Logo" className="feed-logo" />
+            <div className="feed-title-section">
+              <h1 className="feed-title text-primary" style={{fontSize: '36px'}}>Interactive Feed</h1>
+              <p className="section-sub text-fade mt-2" style={{fontSize: '18px'}}>Real-time sentiment processing and response orchestration for multi-channel feedback.</p>
+            </div>
+          </div>
         </div>
 
         {/* Filter Bar - Dropdown Lists */}
-        <div className="feed-filters glass-panel stun-item" style={{animationDelay: '0.2s'}}>
+        <div className="feed-filters glass-panel-filter stun-item" style={{animationDelay: '0.2s'}}>
           
           <div className="filter-group">
             <span className="filter-label text-fade" style={{fontSize: '14px'}}>Filters:</span>
@@ -299,7 +289,7 @@ export default function Feed() {
           {displayedItems.map((item, index) => (
             <div 
               key={item.id} 
-              className={`feed-card glass-panel hover-lift-shadow stun-item base-shadow ${item.isUrgent ? 'urgent-layer' : ''}`}
+              className={`card glass-panel hover-lift-shadow stun-item  ${item.isUrgent ? 'urgent-layer' : ''}`}
               style={{
                 animationDelay: `${0.1 + ((index % 4) * 0.1)}s`, 
                 borderLeft: `6px solid ${getCategoryColor(item.category)}`
@@ -327,7 +317,7 @@ export default function Feed() {
 
               <div className="feed-footer">
                 <div className="feed-control">
-                  <span className="control-label text-fade">CATEGORY</span>
+                  <span className="control-label text-fade">CATEGORY:</span>
                   <select 
                     className="micro-select larger-font"
                     value={item.category}
@@ -342,7 +332,7 @@ export default function Feed() {
                 </div>
 
                 <div className="feed-control">
-                  <span className="control-label text-fade">STATUS</span>
+                  <span className="control-label text-fade">STATUS:</span>
                   <div className="status-pill-group">
                     <button 
                       className={`status-pill larger-font ${item.status === 'Open' ? 'active-open' : ''}`}

@@ -30,10 +30,11 @@ const activityData = [
 ];
 
 const categoryData = [
-  { name: 'Subscription', value: 4556, color: 'var(--color-1)' }, // Blue
-  { name: 'Investing', value: 3200, color: 'var(--color-2)' },   // Green
-  { name: 'Groceries', value: 1500, color: 'var(--color-3)' },   // Muted Blue
-  { name: 'Online Shop', value: 2800, color: 'var(--color-4)' }  // Muted Green
+  { name: 'positive', value: 4556, color: 'var(--color-1)' }, // Blue
+  { name: 'negative', value: 3200, color: 'var(--color-2)' },   // Green
+  { name: 'interrogative', value: 1500, color: 'var(--color-3)' },   // Muted Blue
+  { name: 'suggestion', value: 2800, color: 'var(--color-5)' } , // Muted Green
+   { name: 'off-topic', value: 2800, color: 'var(--color-4)' }  // Muted Green
 ];
 
 const trends = [
@@ -304,7 +305,7 @@ export default function Dashboard() {
           </div>
 
           {/* Memberships / Trends Float List */}
-          <div className="card glass-panel hover-lift-shadow invisible-bg stun-item" style={{animationDelay: '0.7s'}}>
+          <div className="card glass-panel hover-lift-shadow stun-item" style={{animationDelay: '0.7s'}}>
             <div className="card-header border-none">
               <div className="card-title">
                 <h3 className="section-heading">Memberships</h3>

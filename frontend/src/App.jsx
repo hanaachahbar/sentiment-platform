@@ -8,7 +8,7 @@ import {
 import './App.css';
 import Dashboard from './pages/Dashboard';
 import Feed from './pages/Feed';
-
+import logoImg from './assets/logo.png';
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
 
@@ -17,33 +17,30 @@ function App() {
       {/* Sidebar */}
       <aside className="sidebar glass-sidebar">
         <div className="brand">
-          <div className="brand-icon pulse-brand">
-             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-               <path d="M12 2L2 22h20L12 2z" fill="currentColor"/>
-               <circle cx="12" cy="14" r="4" fill="var(--brand-green)"/>
-             </svg>
+          <div className="brand-logo">
+            <img src={logoImg} alt="Algérie Télécom Logo" className="logo-img" />
           </div>
           <div className="brand-text">
-            <h2>TelecomSight</h2>
-            <p>INTELLIGENCE SUITE</p>
+            <h2 className="brand-title">ALGÉRIE TÉLÉCOM</h2>
+            <p className="brand-subtitle">ANALYTICS INTELLIGENCE</p>
           </div>
         </div>
 
         <nav className="nav-menu">
           <a href="#" className={`nav-item hover-lift ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={(e) => { e.preventDefault(); setActiveTab('dashboard'); }}>
-            <LayoutDashboard size={18} className="nav-icon" />
+            <LayoutDashboard size={20} className="nav-icon" />
             Dashboard
           </a>
           <a href="#" className={`nav-item hover-lift ${activeTab === 'feed' ? 'active' : ''}`} onClick={(e) => { e.preventDefault(); setActiveTab('feed'); }}>
-            <MessageSquare size={18} className="nav-icon" />
+            <MessageSquare size={20} className="nav-icon" />
             Feed
           </a>
           <a href="#" className="nav-item hover-lift">
-            <TrendingUp size={18} className="nav-icon" />
+            <TrendingUp size={20} className="nav-icon" />
             Trends
           </a>
           <a href="#" className="nav-item hover-lift">
-            <Settings size={18} className="nav-icon" />
+            <Settings size={20} className="nav-icon" />
             Settings
           </a>
         </nav>
@@ -53,7 +50,6 @@ function App() {
           <div className="progress-bar glow-bar">
             <div className="progress-fill shimmer-effect"></div>
           </div>
-          <button className="new-analysis-btn hover-glow-btn text-gradient">New Analysis</button>
         </div>
       </aside>
 
