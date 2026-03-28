@@ -1,111 +1,252 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  /* Strict Customer Palette */
+  --brand-green: #20B471;
+  --brand-blue: #5398ff;
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  /* Derivatives */
+  --brand-green-light: rgba(32, 180, 113, 0.2);
+  --brand-blue-light: rgba(44, 94, 170, 0.2);
+  --brand-green-muted: #89d8b3;
+  --brand-blue-muted: #8aaad3;
+--brand-greenWithBlue: #01db29;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  /* Data Chart Colors */
+  --color-1: var(--brand-blue);
+  --color-2: var(--brand-green);
+  --color-3: var(--brand-blue-muted);
+  --color-4: var(--brand-green-muted);
+  --color-5: var(--brand-greenWithBlue);
+  /* UI Colors - Dark Mode Adaptation */
+  --bg-app: transparent;
+  --bg-surface: rgba(15, 28, 46, 0.35);
+  /* Translucent surface */
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.7);
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+  /* Borders */
+  --border-color: rgba(255, 255, 255, 0.15);
+  --border-color-alt: rgba(32, 180, 113, 0.2);
+
+  /* Status Colors */
+  --danger: #ef4444;
+  --warning: #eab308;
+  --success: var(--brand-green);
+  --info: var(--brand-blue);
+
+  /* Shadows */
+  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 10px 24px rgba(0, 0, 0, 0.5), inset 0 0 20px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.6), inset 0 0 30px rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 0 30px rgba(32, 180, 113, 0.4);
+  --shadow-glow-blue: 0 0 30px rgba(44, 94, 170, 0.4);
+
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 32px;
+  --radius-full: 9999px;
+
+  /* Animation Timings */
+  --transition-fast: 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+  --transition-smooth: 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+  --transition-bounce: 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
-body {
+* {
   margin: 0;
-}
-
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
+  padding: 0;
   box-sizing: border-box;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background-image: url('./assets/background.png');
+  background-color: #0c1421;
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  color: var(--text-primary);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  font-size: 16px;
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
+/* Welcome Banner Styles */
+.welcome-banner {
+  background: linear-gradient(135deg, rgba(83, 152, 255, 0.08) 0%, rgba(32, 180, 113, 0.08) 100%);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  position: relative;
+  overflow: hidden;
+  padding: 10px 30px;
+  border-radius: 20px;
+  backdrop-filter: blur(20px);
+  box-shadow: 0 8px 32px rgba(83, 152, 255, 0.15), inset 0 0 40px rgba(32, 180, 113, 0.05);
+  transition: all var(--transition-smooth);
 }
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
+
+.welcome-banner::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -50%;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(83, 152, 255, 0.2) 0%, transparent 70%);
+  border-radius: 50%;
+  filter: blur(40px);
+  pointer-events: none;
+  animation: float 20s ease-in-out infinite;
 }
-p {
+
+.welcome-banner::after {
+  content: '';
+  position: absolute;
+  bottom: -30%;
+  left: -10%;
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(32, 180, 113, 0.15) 0%, transparent 70%);
+  border-radius: 50%;
+  filter: blur(40px);
+  pointer-events: none;
+  animation: float 25s ease-in-out infinite reverse;
+}
+
+.welcome-banner:hover {
+  border-color: rgba(83, 152, 255, 0.3);
+  box-shadow: 0 12px 48px rgba(83, 152, 255, 0.25), inset 0 0 50px rgba(32, 180, 113, 0.08);
+  transform: translateY(-4px);
+}
+
+.welcome-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 60px;
+  position: relative;
+  z-index: 2;
+}
+
+.welcome-text-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.welcome-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.welcome-logo-img {
+  width: 120px;
+  height: 120px;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 12px rgba(83, 152, 255, 0.3));
+  animation: float 6s ease-in-out infinite;
+}
+
+.welcome-title {
+  font-size: 42px;
+  font-weight: 700;
+  line-height: 1.2;
+  background: linear-gradient(90deg, #5398ff 0%, #20B471 50%, #5398ff 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -0.5px;
   margin: 0;
+  animation: gradient-shift 4s ease infinite;
 }
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
+@keyframes gradient-shift {
+  0% { background-position: 0% center; }
+  50% { background-position: 100% center; }
+  100% { background-position: 0% center; }
 }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+.welcome-subtitle {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.8;
+  margin: 0;
+  font-weight: 400;
+  letter-spacing: 0.3px;
+}
+
+.welcome-visual {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 280px;
+  height: 280px;
+}
+
+.glow-sphere {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(30px);
+  animation: pulse-glow 4s ease-in-out infinite;
+}
+
+.glow-sphere.blue-glow {
+  width: 180px;
+  height: 180px;
+  background: radial-gradient(circle, rgba(83, 152, 255, 0.4) 0%, transparent 70%);
+  animation: pulse-glow 4s ease-in-out infinite, float 8s ease-in-out infinite;
+}
+
+.glow-sphere.green-glow {
+  width: 140px;
+  height: 140px;
+  background: radial-gradient(circle, rgba(32, 180, 113, 0.3) 0%, transparent 70%);
+  top: 40px;
+  right: 20px;
+  animation: pulse-glow 5s ease-in-out infinite 0.5s, float 10s ease-in-out infinite 1s;
+}
+
+.sparkle-icon {
+  position: absolute;
+  color: rgba(83, 152, 255, 0.6);
+  animation: sparkle 3s ease-in-out infinite, float 6s ease-in-out infinite;
+  filter: drop-shadow(0 0 20px rgba(83, 152, 255, 0.4));
+}
+
+@keyframes pulse-glow {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.1); opacity: 1; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-20px); }
+}
+
+@keyframes sparkle {
+  0%, 100% { opacity: 0.5; transform: scale(1) rotate(0deg); }
+  50% { opacity: 1; transform: scale(1.1) rotate(180deg); }
+}
+
+@media (max-width: 1024px) {
+  .welcome-content {
+    flex-direction: column;
+    gap: 40px;
+  }
+  
+  .welcome-title {
+    font-size: 36px;
+  }
+  
+  .welcome-visual {
+    width: 240px;
+    height: 240px;
+  }
 }

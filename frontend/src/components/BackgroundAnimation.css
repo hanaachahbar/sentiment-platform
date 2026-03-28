@@ -1,0 +1,105 @@
+.background-animation-layer {
+  position: fixed;
+  inset: 0;
+  z-index: -10;
+  background: #0c1421; /* Ultra deep dark teal */
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.waves-container {
+  position: absolute;
+  inset: 0;
+  opacity: 0.8;
+  transform: translateZ(0); /* Force GPU acceleration */
+}
+
+/* 
+ * --- ENERGY STRAND ANIMATION ---
+ * Using stroke-dasharray + dashoffset to create "flowing energy" inside the strokes,
+ * and 3D transforms for a "billowing" structural effect.
+ */
+.energy-strand {
+  stroke-dasharray: 2000;
+  animation: billowingWave 25s infinite ease-in-out alternate;
+  transform-origin: center;
+  will-change: transform, stroke-dashoffset;
+}
+
+.energy-pulse {
+  stroke-dasharray: 50, 1950;
+  stroke-dashoffset: 2000;
+  animation: pulseFlow 8s infinite linear;
+  opacity: 0.8;
+  will-change: stroke-dashoffset;
+}
+
+@keyframes pulseFlow {
+  0% { stroke-dashoffset: 2000; }
+  100% { stroke-dashoffset: 0; }
+}
+
+@keyframes billowingWave {
+  0% {
+    stroke-dashoffset: 2000;
+    transform: translate3d(-3%, -3%, 0) scale(1) rotate(0deg);
+    opacity: 0.1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    transform: translate3d(3%, 3%, 0) scale(1.1) rotate(3deg);
+    opacity: 0.2;
+  }
+}
+
+/* 
+ * --- PARTICLE ANIMATION ---
+ * Simple shimmer + float for deep background depth.
+ */
+.particles-container {
+  position: absolute;
+  inset: 0;
+}
+
+.particle {
+  position: absolute;
+  background: white;
+  border-radius: 50%;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
+  animation: floatParticle 20s infinite ease-in-out;
+  opacity: 0.3;
+}
+
+@keyframes floatParticle {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.3;
+  }
+  25% {
+    transform: translate3d(30px, -60px, 0) scale(1.6);
+    opacity: 0.7;
+    box-shadow: 0 0 25px rgba(255, 255, 255, 0.7);
+  }
+  50% {
+    transform: translate3d(-40px, -110px, 0) scale(0.7);
+    opacity: 0.2;
+  }
+  75% {
+    transform: translate3d(50px, -30px, 0) scale(1.3);
+    opacity: 0.6;
+  }
+}
+
+/* 
+ * --- VIGNETTE ---
+ * Deepens the edges to make the central UI elements pop more.
+ */
+.overlay-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, transparent 20%, rgba(12, 20, 33, 0.5) 100%);
+  pointer-events: none;
+}
