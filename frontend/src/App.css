@@ -694,7 +694,7 @@
   backdrop-filter: blur(10px) saturate(180%);
   -webkit-backdrop-filter: blur(10px) saturate(180%);
 
-  background-color: rgba(10, 18, 30, 0.6); /* lighter + more transparent */
+  background-color: rgba(10, 18, 30, 0.769);
 
   border-radius: 12px;
 
@@ -704,17 +704,24 @@
     inset 0 0 25px rgba(0, 0, 0, 0.4),
     0 6px 25px rgba(0, 0, 0, 0.35);
 
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   background-image: linear-gradient(
     to top right,
     rgba(0, 0, 0, 0.2),
     rgba(0, 0, 0, 0)
   );
-
-  background-size: cover;
-  background-repeat: no-repeat;
-
-  position: relative;
-  overflow: hidden;
+  pointer-events: none;
+  border-radius: 12px;
 }
 /* Animations & Transitions */
 @keyframes fadeInUp {
@@ -904,7 +911,6 @@
   border-radius: var(--radius-lg);
   position: relative;
   overflow: hidden;
-  background-color: var(--bg-surface);
 }
 .kpi-spark-content {
   display: flex;

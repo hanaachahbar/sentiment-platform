@@ -62,8 +62,7 @@
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   background-image: url('./assets/background.png');
-  background-color: #0f1c2e;
-  /* Fallback */
+  background-color: #0c1421;
   background-size: cover;
   background-position: center;
   background-attachment: fixed;
@@ -72,4 +71,182 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   font-size: 16px;
+}
+
+/* Welcome Banner Styles */
+.welcome-banner {
+  background: linear-gradient(135deg, rgba(83, 152, 255, 0.08) 0%, rgba(32, 180, 113, 0.08) 100%);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  position: relative;
+  overflow: hidden;
+  padding: 10px 30px;
+  border-radius: 20px;
+  backdrop-filter: blur(20px);
+  box-shadow: 0 8px 32px rgba(83, 152, 255, 0.15), inset 0 0 40px rgba(32, 180, 113, 0.05);
+  transition: all var(--transition-smooth);
+}
+
+.welcome-banner::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -50%;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(83, 152, 255, 0.2) 0%, transparent 70%);
+  border-radius: 50%;
+  filter: blur(40px);
+  pointer-events: none;
+  animation: float 20s ease-in-out infinite;
+}
+
+.welcome-banner::after {
+  content: '';
+  position: absolute;
+  bottom: -30%;
+  left: -10%;
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(32, 180, 113, 0.15) 0%, transparent 70%);
+  border-radius: 50%;
+  filter: blur(40px);
+  pointer-events: none;
+  animation: float 25s ease-in-out infinite reverse;
+}
+
+.welcome-banner:hover {
+  border-color: rgba(83, 152, 255, 0.3);
+  box-shadow: 0 12px 48px rgba(83, 152, 255, 0.25), inset 0 0 50px rgba(32, 180, 113, 0.08);
+  transform: translateY(-4px);
+}
+
+.welcome-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 60px;
+  position: relative;
+  z-index: 2;
+}
+
+.welcome-text-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.welcome-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.welcome-logo-img {
+  width: 120px;
+  height: 120px;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 12px rgba(83, 152, 255, 0.3));
+  animation: float 6s ease-in-out infinite;
+}
+
+.welcome-title {
+  font-size: 42px;
+  font-weight: 700;
+  line-height: 1.2;
+  background: linear-gradient(90deg, #5398ff 0%, #20B471 50%, #5398ff 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -0.5px;
+  margin: 0;
+  animation: gradient-shift 4s ease infinite;
+}
+
+@keyframes gradient-shift {
+  0% { background-position: 0% center; }
+  50% { background-position: 100% center; }
+  100% { background-position: 0% center; }
+}
+
+.welcome-subtitle {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.8;
+  margin: 0;
+  font-weight: 400;
+  letter-spacing: 0.3px;
+}
+
+.welcome-visual {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 280px;
+  height: 280px;
+}
+
+.glow-sphere {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(30px);
+  animation: pulse-glow 4s ease-in-out infinite;
+}
+
+.glow-sphere.blue-glow {
+  width: 180px;
+  height: 180px;
+  background: radial-gradient(circle, rgba(83, 152, 255, 0.4) 0%, transparent 70%);
+  animation: pulse-glow 4s ease-in-out infinite, float 8s ease-in-out infinite;
+}
+
+.glow-sphere.green-glow {
+  width: 140px;
+  height: 140px;
+  background: radial-gradient(circle, rgba(32, 180, 113, 0.3) 0%, transparent 70%);
+  top: 40px;
+  right: 20px;
+  animation: pulse-glow 5s ease-in-out infinite 0.5s, float 10s ease-in-out infinite 1s;
+}
+
+.sparkle-icon {
+  position: absolute;
+  color: rgba(83, 152, 255, 0.6);
+  animation: sparkle 3s ease-in-out infinite, float 6s ease-in-out infinite;
+  filter: drop-shadow(0 0 20px rgba(83, 152, 255, 0.4));
+}
+
+@keyframes pulse-glow {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.1); opacity: 1; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-20px); }
+}
+
+@keyframes sparkle {
+  0%, 100% { opacity: 0.5; transform: scale(1) rotate(0deg); }
+  50% { opacity: 1; transform: scale(1.1) rotate(180deg); }
+}
+
+@media (max-width: 1024px) {
+  .welcome-content {
+    flex-direction: column;
+    gap: 40px;
+  }
+  
+  .welcome-title {
+    font-size: 36px;
+  }
+  
+  .welcome-visual {
+    width: 240px;
+    height: 240px;
+  }
 }

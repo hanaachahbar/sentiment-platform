@@ -6,8 +6,10 @@ import {
   HelpCircle,
   Bell,
   ArrowRight,
-  TrendingDown
+  TrendingDown,
+  Sparkles
 } from 'lucide-react';
+import logoImg from '../assets/logo.png';
 import { 
   LineChart, 
   Line, 
@@ -96,6 +98,25 @@ export default function Dashboard() {
       </header>
 
       <div className="dashboard-container fade-in-up">
+        {/* Welcome Section */}
+        <div className="welcome-banner glass-panel stun-item mb-8">
+          <div className="welcome-content">
+            <div className="welcome-text-section">
+              <div className="welcome-header">
+                <img src={logoImg} alt="TelecomSight Logo" className="welcome-logo-img" />
+                <h1 className="welcome-title">TelecomSight</h1>
+              </div>
+              <p className="welcome-subtitle">
+                Real-time customer sentiment analysis and intelligence platform. Monitor social media conversations, detect emerging issues instantly, and make data-driven decisions with AI-powered insights. Stay ahead of customer needs and market trends.
+              </p>
+            </div>
+            <div className="welcome-visual">
+               <div className="glow-sphere blue-glow"></div>
+               <div className="glow-sphere green-glow"></div>
+            </div>
+          </div>
+        </div>
+
         {/* KPI Cards (Sparkline Style) */}
         <div className="kpi-spark-grid mb-8">
           
@@ -124,7 +145,7 @@ export default function Dashboard() {
           </div>
 
           {/* Green Variation */}
-          <div className="kpi-spark-card glass-panel hover-lift-shadow stun-item" style={{animationDelay: '0.2s', borderLeft: '4px solid var(--color-2)'}}>
+          <div className="kpi-spark-card glass-panel  stun-item" style={{animationDelay: '0.2s', borderLeft: '4px solid var(--color-2)'}}>
             <div className="kpi-spark-content">
               <span className="kpi-spark-title">Focused Time <span className="text-fade">/ Day</span></span>
               <div className="kpi-spark-value">8.5 hr</div>
@@ -308,7 +329,7 @@ export default function Dashboard() {
           <div className="card glass-panel hover-lift-shadow stun-item" style={{animationDelay: '0.7s'}}>
             <div className="card-header border-none">
               <div className="card-title">
-                <h3 className="section-heading">Memberships</h3>
+                <h3 className="section-heading">Trends</h3>
                 <p className="section-sub text-fade mt-2">Generate placeholder packages. Select the active trends and tiers.</p>
               </div>
             </div>
