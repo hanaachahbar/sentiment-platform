@@ -27,7 +27,7 @@ def get_posts(
 
     now = datetime.utcnow()
     updated = False
-#the MVP fpr the chrone job to update the status of tickets that have breached their SLA deadline
+# Check for SLA breaches and update status if needed(can be removed later one)
     for t in tickets:
         if t.status == "open" and t.sla_deadline and now > t.sla_deadline:
             t.status = "breached"
@@ -35,7 +35,7 @@ def get_posts(
 
     if updated:
         db.commit()
-
+#end of this part
     response = [
         {
             "id": t.id,
@@ -49,7 +49,8 @@ def get_posts(
             "manually_corrected": t.manually_corrected,
             "is_urgent": t.is_urgent,
             "sla_deadline": t.sla_deadline,
-            "status": t.status
+            "status": t.status,
+            "topic": t.topic
         }
         for t in tickets
     ]
