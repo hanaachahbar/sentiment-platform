@@ -11,14 +11,17 @@ def get_stats():
 
     tickets = db.query(Ticket).all()
 
-    today_posts = [t for t in tickets if t.created_at.date() == today]
+    today_posts = [t for t in tickets if t.created_at and t.created_at.date() == today]
 
     total = len(today_posts)
-    complaints = len([t for t in today_posts if t.category == "Complaint"])
+    complaints = len([t for t in today_posts if (t.category_manual or t.category) == "Complaint"])
     breaches = len([t for t in tickets if t.status == "breached"])
 
-    return {
+    response = {
         "total_posts_today": total,
         "complaint_percentage": (complaints / total * 100) if total else 0,
         "sla_breaches": breaches
     }
+
+    db.close()
+    return response
