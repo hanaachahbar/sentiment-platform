@@ -14,6 +14,7 @@ def resolve_ticket(id: int):
 
     ticket.status = "resolved"
     db.commit()
+
     response = {"id": ticket.id, "status": ticket.status}
     db.close()
     return response
@@ -26,6 +27,10 @@ def update_category(id: int, data: dict = Body(...)):
     if not ticket:
         db.close()
         raise HTTPException(status_code=404, detail="Ticket not found")
+
+    if "category" not in data:
+        db.close()
+        raise HTTPException(status_code=400, detail="Missing category in request body")
 
     ticket.category_manual = data["category"]
     ticket.manually_corrected = True
