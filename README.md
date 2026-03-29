@@ -19,3 +19,11 @@ pip install -r requirements.txt
 ## 5. Run server
 
 uvicorn main:app --reload
+
+## API Endpoints
+
+- GET /api/posts
+- GET /api/stats
+- PATCH /api/tickets/{id}/category
+- POST /api/tickets/{id}/resolve
+- GET /api/export
