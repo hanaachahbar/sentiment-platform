@@ -7,7 +7,8 @@ import {
   Bell,
   ArrowRight,
   TrendingDown,
-  Sparkles
+  Sparkles,
+  AlertCircle
 } from 'lucide-react';
 import logoImg from '../assets/logo.png';
 import { 
@@ -40,10 +41,10 @@ const categoryData = [
 ];
 
 const trends = [
-  { id: 1, name: 'Monthly Youth', desc: '$200 per month, unlimited', color: 'var(--color-2)' },
-  { id: 2, name: 'Monthly Audit', desc: '$200 per month, unlimited 18+', color: 'var(--color-3)' },
-  { id: 3, name: 'Trial', desc: '$25 one-time', color: 'var(--color-4)' },
-  { id: 4, name: 'Summer Camps', desc: '$499 per year, unlimited 18+', color: 'var(--color-1)' }
+  { id: 'outage', name: 'Internet Outage', desc: 'Critical connectivity signals', color: '#3b82f6' },
+  { id: 'billing', name: 'Billing Discrepancies', desc: 'Financial feedback & issues', color: '#0f5132' },
+  { id: 'darkmode', name: 'Dark Mode Request', desc: 'Top requested features', color: '#10b981' },
+  { id: 'nav', name: 'Navigation Lag', desc: 'User experience friction', color: '#64748b' }
 ];
 
 // Sparkline Mock Data
@@ -53,7 +54,7 @@ const spark3 = [{v: 20}, {v: 35}, {v: 25}, {v: 40}, {v: 30}, {v: 45}, {v: 60}];
 const spark4 = [{v: 60}, {v: 55}, {v: 65}, {v: 50}, {v: 45}, {v: 55}, {v: 40}];
 
 // --- COMPONENT ---
-export default function Dashboard() {
+export default function Dashboard({ onNavigateToTrend, onNavigateToSLAAlerts }) {
   const [activeIndex, setActiveIndex] = useState(1);
 
   // Custom active shape for the Donut Chart (pop-out effect)
@@ -120,13 +121,13 @@ export default function Dashboard() {
         {/* KPI Cards (Sparkline Style) */}
         <div className="kpi-spark-grid mb-8">
           
-          {/* Blue Variation */}
+          {/* Total Mentions Today */}
           <div className="kpi-spark-card glass-panel hover-lift-shadow stun-item" style={{animationDelay: '0.1s', borderLeft: '4px solid var(--color-1)'}}>
             <div className="kpi-spark-content">
-              <span className="kpi-spark-title">Productive Time <span className="text-fade">/ Day</span></span>
-              <div className="kpi-spark-value">12.4 hr</div>
+              <span className="kpi-spark-title">Total Mentions <span className="text-fade">/ Today</span></span>
+              <div className="kpi-spark-value">1,284</div>
               <div className="kpi-spark-status" style={{color: 'var(--color-1)'}}>
-                <TrendingUp size={14} /> +23% last week
+                <TrendingUp size={14} /> +23% vs yesterday
               </div>
             </div>
             <div className="kpi-spark-graph">
@@ -144,13 +145,13 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Green Variation */}
-          <div className="kpi-spark-card glass-panel  stun-item" style={{animationDelay: '0.2s', borderLeft: '4px solid var(--color-2)'}}>
+          {/* Open Tickets */}
+          <div className="kpi-spark-card glass-panel stun-item" style={{animationDelay: '0.2s', borderLeft: '4px solid #e11d48'}}>
             <div className="kpi-spark-content">
-              <span className="kpi-spark-title">Focused Time <span className="text-fade">/ Day</span></span>
-              <div className="kpi-spark-value">8.5 hr</div>
-              <div className="kpi-spark-status" style={{color: 'var(--color-2)'}}>
-                <TrendingDown size={14} /> -18% last week
+              <span className="kpi-spark-title">Open Tickets <span className="text-fade">/ Unresolved</span></span>
+              <div className="kpi-spark-value" style={{color: '#e11d48'}}>47</div>
+              <div className="kpi-spark-status" style={{color: '#e11d48'}}>
+                <TrendingUp size={14} /> +8 since this morning
               </div>
             </div>
             <div className="kpi-spark-graph">
@@ -158,23 +159,23 @@ export default function Dashboard() {
                 <LineChart data={spark2}>
                   <defs>
                     <linearGradient id="grad2" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="var(--color-2)" stopOpacity={0.4}/>
-                      <stop offset="100%" stopColor="var(--color-2)" stopOpacity={0}/>
+                      <stop offset="0%" stopColor="#e11d48" stopOpacity={0.4}/>
+                      <stop offset="100%" stopColor="#e11d48" stopOpacity={0}/>
                     </linearGradient>
                   </defs>
-                  <Line type="monotone" dataKey="v" stroke="var(--color-2)" strokeWidth={2} dot={{ r: 3, fill: "var(--color-2)" }} activeDot={false} fill="url(#grad2)" />
+                  <Line type="monotone" dataKey="v" stroke="#e11d48" strokeWidth={2} dot={{ r: 3, fill: "#e11d48" }} activeDot={false} fill="url(#grad2)" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Light Blue Variation */}
+          {/* Avg. Response Time */}
           <div className="kpi-spark-card glass-panel hover-lift-shadow stun-item" style={{animationDelay: '0.3s', borderLeft: '4px solid var(--color-3)'}}>
             <div className="kpi-spark-content">
-              <span className="kpi-spark-title">Available Time <span className="text-fade">/ Day</span></span>
-              <div className="kpi-spark-value">6.5 hr</div>
-              <div className="kpi-spark-status" style={{color: 'var(--color-3)'}}>
-                <TrendingUp size={14} /> +15% last week
+              <span className="kpi-spark-title">Avg. Response <span className="text-fade">/ Time</span></span>
+              <div className="kpi-spark-value">3.2 hr</div>
+              <div className="kpi-spark-status" style={{color: 'var(--brand-green)'}}>
+                <TrendingDown size={14} /> -18% vs last week
               </div>
             </div>
             <div className="kpi-spark-graph">
@@ -192,13 +193,13 @@ export default function Dashboard() {
             </div>
           </div>
           
-          {/* Light Green Variation */}
-          <div className="kpi-spark-card glass-panel hover-lift-shadow stun-item" style={{animationDelay: '0.4s', borderLeft: '4px solid var(--color-4)'}}>
+          {/* SLA Breach Rate */}
+          <div className="kpi-spark-card glass-panel hover-lift-shadow stun-item" style={{animationDelay: '0.4s', borderLeft: '4px solid #eab308'}}>
             <div className="kpi-spark-content">
-              <span className="kpi-spark-title">Lost Time <span className="text-fade">/ Day</span></span>
-              <div className="kpi-spark-value">1.1 hr</div>
-              <div className="kpi-spark-status" style={{color: 'var(--color-4)'}}>
-                <TrendingDown size={14} /> -5% last week
+              <span className="kpi-spark-title">SLA Breach Rate <span className="text-fade">/ 48h</span></span>
+              <div className="kpi-spark-value" style={{color: '#eab308'}}>12.4%</div>
+              <div className="kpi-spark-status" style={{color: '#e11d48'}}>
+                <TrendingUp size={14} /> +2.1% vs last week
               </div>
             </div>
             <div className="kpi-spark-graph">
@@ -206,11 +207,11 @@ export default function Dashboard() {
                 <LineChart data={spark4}>
                   <defs>
                     <linearGradient id="grad4" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="var(--color-4)" stopOpacity={0.4}/>
-                      <stop offset="100%" stopColor="var(--color-4)" stopOpacity={0}/>
+                      <stop offset="0%" stopColor="#eab308" stopOpacity={0.4}/>
+                      <stop offset="100%" stopColor="#eab308" stopOpacity={0}/>
                     </linearGradient>
                   </defs>
-                  <Line type="monotone" dataKey="v" stroke="var(--color-4)" strokeWidth={2} dot={{ r: 3, fill: "var(--color-4)" }} activeDot={false} fill="url(#grad4)" />
+                  <Line type="monotone" dataKey="v" stroke="#eab308" strokeWidth={2} dot={{ r: 3, fill: "#eab308" }} activeDot={false} fill="url(#grad4)" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -305,10 +306,6 @@ export default function Dashboard() {
                     </Pie>
                   </PieChart>
                 </ResponsiveContainer>
-                <div className="donut-center">
-                  <span className="donut-label">Total</span>
-                  <span className="donut-total">$4,556.00</span>
-                </div>
               </div>
 
               <div className="donut-legend">
@@ -330,12 +327,17 @@ export default function Dashboard() {
             <div className="card-header border-none">
               <div className="card-title">
                 <h3 className="section-heading">Trends</h3>
-                <p className="section-sub text-fade mt-2">Generate placeholder packages. Select the active trends and tiers.</p>
+                <p className="section-sub text-fade mt-2">Monitor emerging customer patterns. Click a trend to view detailed analysis and comments.</p>
               </div>
             </div>
             <div className="floating-list">
               {trends.map((trend, i) => (
-                <div className="float-card hover-float-card stun-item" key={trend.id} style={{animationDelay: `${i * 0.1}s`}}>
+                <div 
+                  className="float-card hover-float-card stun-item" 
+                  key={trend.id} 
+                  style={{animationDelay: `${i * 0.1}s`}}
+                  onClick={() => onNavigateToTrend(trend.id)}
+                >
                   <div className="float-card-border" style={{backgroundColor: trend.color}}></div>
                   <div className="float-card-content">
                     <h4>{trend.name}</h4>
@@ -351,7 +353,22 @@ export default function Dashboard() {
 
         </div>
 
+        {/* SLA Alerts Quick Access */}
+        <div className="card glass-panel hover-lift-shadow stun-item" style={{animationDelay: '0.8s', borderTop: '3px solid #e11d48', cursor: 'pointer'}} onClick={() => onNavigateToSLAAlerts()}>
+          <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px'}}>
+            <div style={{display: 'flex', alignItems: 'center', gap: '12px'}}>
+              <AlertCircle size={32} style={{color: '#e11d48'}} />
+              <div>
+                <h3 className="section-heading" style={{marginBottom: '4px'}}>SLA Alerts</h3>
+                <p className="section-sub text-fade">Monitor tickets approaching SLA deadline</p>
+              </div>
+            </div>
+            <ArrowRight size={24} style={{color: '#e11d48', minWidth: '24px'}} />
+          </div>
+        </div>
+
       </div>
     </div>
   );
 }
+
