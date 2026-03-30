@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AlertCircle, Clock, ExternalLink, MessageCircle, ArrowLeft, ArrowRight, ChevronDown, Calendar, X } from 'lucide-react';
+import { AlertCircle, Clock, ExternalLink, MessageCircle, ArrowLeft, ArrowRight, ChevronDown, Calendar, X, Download, FileText, Sheet } from 'lucide-react';
 import logoImg from '../assets/logo.png';
 
 // --- MOCK DATE HELPERS ---
@@ -87,7 +87,7 @@ const mockFeed = [
   }
 ];
 
-export default function Feed() {
+export default function Feed({ selectedTicketId }) {
   const [items, setItems] = useState(mockFeed);
   
   // Filter States
@@ -110,6 +110,20 @@ export default function Feed() {
 
   // Pagination State
   const [visibleCount, setVisibleCount] = useState(4);
+
+  // Export Modal State
+  const [isExportModalOpen, setExportModalOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState('csv');
+  const [exportColumns, setExportColumns] = useState({
+    customerName: true,
+    dateTime: true,
+    commentText: true,
+    category: true,
+    status: true,
+    slaValue: true,
+    platform: true,
+  });
+  const toggleExportColumn = (key) => setExportColumns(prev => ({ ...prev, [key]: !prev[key] }));
 
   // Formatting helpers
   const formatDisplayTime = (isoString) => {
@@ -193,17 +207,47 @@ export default function Feed() {
     }
   };
 
-  // Auto-close modal on escape
+  // Auto-close modals on escape
   useEffect(() => {
     const handleKeyDown = (e) => { 
       if (e.key === 'Escape') {
         setTimeModalOpen(false);
         setOpenDropdown(null);
+        setExportModalOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  // Export logic
+  const handleExportNow = () => {
+    const columnMap = [
+      { key: 'customerName',  label: 'Customer Name',  getter: i => i.author },
+      { key: 'dateTime',      label: 'Date & Time',    getter: i => formatDisplayTime(i.timestamp) },
+      { key: 'commentText',   label: 'Comment Text',   getter: i => i.text },
+      { key: 'category',      label: 'Category',       getter: i => i.category },
+      { key: 'status',        label: 'Status',         getter: i => i.status },
+      { key: 'slaValue',      label: 'SLA Value',      getter: i => i.sla },
+      { key: 'platform',      label: 'Platform',       getter: i => i.platform },
+    ].filter(col => exportColumns[col.key]);
+
+    const headers = columnMap.map(c => c.label);
+    const rows = filteredItems.map(item => columnMap.map(c => `"${String(c.getter(item)).replace(/"/g, '""')}"`));
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+
+    const blob = new Blob([csvContent], { type: exportFormat === 'csv' ? 'text/csv' : 'text/csv' });
+    const ext = exportFormat === 'csv' ? 'csv' : 'xlsx';
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `telecomsight_export_${new Date().toISOString().split('T')[0]}.${ext}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setExportModalOpen(false);
+  };
 
   return (
     <div className="dashboard-wrapper" onClick={() => { if(openDropdown) setOpenDropdown(null) }}>
@@ -225,7 +269,7 @@ export default function Feed() {
         <div className="feed-filters glass-panel-filter stun-item" style={{animationDelay: '0.2s'}}>
           
           <div className="filter-group">
-            <span className="filter-label text-fade" style={{fontSize: '14px'}}>Filters:</span>
+            <span className="filter-label text-fade" style={{fontSize: '16px'}}>Filters:</span>
             
             {/* Category Dropdown */}
             <div className="custom-dropdown" onClick={(e) => e.stopPropagation()}>
@@ -277,9 +321,12 @@ export default function Feed() {
 
           </div>
 
-          <div className="filter-group ml-auto">
+          <div className="filter-group ml-auto" style={{gap: '12px'}}>
              <button className="massive-time-btn hover-lift-shadow pulse-animation" onClick={() => setTimeModalOpen(true)}>
-               <Calendar size={18} className="mr-2" style={{marginRight: '8px'}}/> {activeTimePreset === 'Custom' ? 'Custom Range' : activeTimePreset}
+               <Calendar size={18} style={{marginRight: '8px'}}/> {activeTimePreset === 'Custom' ? 'Custom Range' : activeTimePreset}
+             </button>
+             <button className="export-btn hover-lift-shadow" onClick={(e) => { e.stopPropagation(); setExportModalOpen(true); }}>
+               <Download size={18} style={{marginRight: '8px'}}/> Export
              </button>
           </div>
         </div>
@@ -358,7 +405,7 @@ export default function Feed() {
           ))}
 
           {filteredItems.length === 0 && (
-            <div className="empty-state text-fade mt-8 stun-item" style={{textAlign: 'center', padding: '60px', fontSize: '20px'}}>
+            <div className="empty-state text-fade mt-8 stun-item" style={{textAlign: 'center', padding: '60px', fontSize: '24px'}}>
               No feedback items match your filters for the selected time range.
             </div>
           )}
@@ -386,7 +433,7 @@ export default function Feed() {
 
       </div>
 
-      {/* --- MASSIVE FULL SCREEN TIME MODAL --- */}
+      {/* --- TIME RANGE MODAL --- */}
       {isTimeModalOpen && (
         <div className="fullscreen-overlay stun-item">
           <div className="time-modal-container glass-panel fade-in-up">
@@ -397,7 +444,6 @@ export default function Feed() {
             </div>
 
             <div className="time-modal-body">
-              {/* Left Form: Fast Presets */}
               <div className="time-preset-column">
                 <h3 className="section-sub text-fade mb-4" style={{textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700'}}>Fast Filters</h3>
                 <div className="preset-grid">
@@ -405,56 +451,123 @@ export default function Feed() {
                     <button 
                       key={preset}
                       className={`massive-preset-btn ${activeTimePreset === preset ? 'active' : ''}`}
-                      onClick={() => {
-                        setActiveTimePreset(preset);
-                        setCustomStartStr('');
-                        setCustomEndStr('');
-                      }}
+                      onClick={() => { setActiveTimePreset(preset); setCustomStartStr(''); setCustomEndStr(''); }}
                     >
                       {preset}
                     </button>
                   ))}
-                  <button 
-                    className={`massive-preset-btn ${activeTimePreset === 'Custom' ? 'active' : ''}`}
-                    onClick={() => setActiveTimePreset('Custom')}
-                  >
+                  <button className={`massive-preset-btn ${activeTimePreset === 'Custom' ? 'active' : ''}`} onClick={() => setActiveTimePreset('Custom')}>
                     Custom Dates...
                   </button>
                 </div>
               </div>
 
-              {/* Right Form: Custom Selectors */}
               <div className="time-custom-column">
                 <h3 className="section-sub text-fade mb-4" style={{textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '700'}}>Manual Constraint</h3>
-                
-                <div className={`custom-boxes ${activeTimePreset !== 'Custom' ? 'disabled-area' : ''}`}>
+                <div className={`${activeTimePreset !== 'Custom' ? 'disabled-area' : ''}`}>
                   <div className="date-input-group">
                     <label>Start Date</label>
-                    <input 
-                      type="date" 
-                      className="massive-date-input" 
-                      max={todayStr}
-                      value={customStartStr}
-                      onChange={(e) => { setActiveTimePreset('Custom'); setCustomStartStr(e.target.value); }}
-                    />
+                    <input type="date" className="massive-date-input" max={todayStr} value={customStartStr} onChange={(e) => { setActiveTimePreset('Custom'); setCustomStartStr(e.target.value); }} />
                   </div>
                   <div className="date-input-group" style={{marginTop: '24px'}}>
                     <label>End Date (Max Today)</label>
-                    <input 
-                      type="date" 
-                      className="massive-date-input" 
-                      max={todayStr}
-                      value={customEndStr}
-                      onChange={(e) => { setActiveTimePreset('Custom'); setCustomEndStr(e.target.value); }}
-                    />
+                    <input type="date" className="massive-date-input" max={todayStr} value={customEndStr} onChange={(e) => { setActiveTimePreset('Custom'); setCustomEndStr(e.target.value); }} />
                   </div>
                 </div>
               </div>
             </div>
 
             <div className="time-modal-footer">
-              <button className="massive-apply-btn hover-lift-shadow" onClick={handleApplyTimeFilter}>
-                Apply Filter & Return
+              <button className="massive-apply-btn hover-lift-shadow" onClick={handleApplyTimeFilter}>Apply Filter & Return</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- EXPORT MODAL --- */}
+      {isExportModalOpen && (
+        <div className="fullscreen-overlay stun-item" onClick={() => setExportModalOpen(false)}>
+          <div className="export-modal-container glass-panel fade-in-up" onClick={e => e.stopPropagation()}>
+
+            <div className="time-modal-header">
+              <h2 className="text-primary" style={{fontSize: '28px', display: 'flex', alignItems: 'center', gap: '12px'}}>
+                <Download size={28} style={{color: 'var(--brand-blue)'}}/> Export Comments
+              </h2>
+              <button className="modal-close-btn hover-lift" onClick={() => setExportModalOpen(false)}><X size={28} /></button>
+            </div>
+
+            <div className="export-modal-body">
+
+              {/* Column Selection */}
+              <div className="export-section">
+                <h3 className="export-section-title">Columns to Include</h3>
+                <div className="export-columns-grid">
+                  {[
+                    { key: 'customerName', label: 'Customer Name' },
+                    { key: 'dateTime',     label: 'Date & Time' },
+                    { key: 'commentText',  label: 'Comment Text' },
+                    { key: 'category',     label: 'Category' },
+                    { key: 'status',       label: 'Status' },
+                    { key: 'slaValue',     label: 'SLA Value' },
+                    { key: 'platform',     label: 'Platform' },
+                  ].map(col => (
+                    <label key={col.key} className={`export-checkbox-item ${exportColumns[col.key] ? 'checked' : ''}`}>
+                      <input 
+                        type="checkbox" 
+                        checked={exportColumns[col.key]} 
+                        onChange={() => toggleExportColumn(col.key)}
+                        style={{display: 'none'}}
+                      />
+                      <span className="export-checkbox-box">{exportColumns[col.key] && '✓'}</span>
+                      <span>{col.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Filter note */}
+              <div className="export-filter-note">
+                <FileText size={16} style={{marginRight: '8px', color: 'var(--brand-blue)', flexShrink: 0}}/>
+                Exporting <strong style={{color: 'white', margin: '0 4px'}}>{filteredItems.length}</strong> comment{filteredItems.length !== 1 ? 's' : ''} matching current filters.
+              </div>
+
+              {/* Format Selection */}
+              <div className="export-section">
+                <h3 className="export-section-title">Export Format</h3>
+                <div style={{display: 'flex', gap: '16px'}}>
+                  <button 
+                    className={`export-format-btn ${exportFormat === 'csv' ? 'active' : ''}`}
+                    onClick={() => setExportFormat('csv')}
+                  >
+                    <FileText size={24} style={{marginBottom: '8px'}}/>
+                    CSV
+                    <span style={{fontSize: '13px', opacity: 0.6, display: 'block'}}>Comma-separated</span>
+                  </button>
+                  <button 
+                    className={`export-format-btn ${exportFormat === 'excel' ? 'active' : ''}`}
+                    onClick={() => setExportFormat('excel')}
+                  >
+                    <Download size={24} style={{marginBottom: '8px'}}/>
+                    Excel
+                    <span style={{fontSize: '13px', opacity: 0.6, display: 'block'}}>.xlsx format</span>
+                  </button>
+                </div>
+              </div>
+
+            </div>
+
+            <div className="export-modal-footer">
+              <button className="massive-preset-btn" onClick={() => setExportModalOpen(false)} style={{minWidth: '140px'}}>
+                Cancel
+              </button>
+              <button 
+                className="massive-apply-btn hover-lift-shadow" 
+                onClick={handleExportNow}
+                disabled={!Object.values(exportColumns).some(Boolean) || filteredItems.length === 0}
+                style={{minWidth: '180px'}}
+              >
+                <Download size={18} style={{marginRight: '8px'}} />
+                Export Now
               </button>
             </div>
 
