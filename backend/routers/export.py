@@ -4,51 +4,91 @@ from database import SessionLocal, Ticket
 import csv
 import io
 from datetime import datetime
+from sqlalchemy import case, and_
 
 router = APIRouter()
 
 @router.get("/api/export")
-def export_data(from_date: str = None, to_date: str = None, status: str = None, category: str = None):
+def export_data(
+    from_date: str = None,
+    to_date: str = None,
+    status: str = None,
+    category: str = None
+):
     db = SessionLocal()
-    query = db.query(Ticket)
 
-    if status:
-        query = query.filter(Ticket.status == status)
-    if category:
-        query = query.filter(Ticket.category == category)
+    try:
+        effective_category = case(
+            (
+                and_(
+                    Ticket.manually_corrected == True,
+                    Ticket.category_manual.isnot(None),
+                    Ticket.category_manual != ""
+                ),
+                Ticket.category_manual
+            ),
+            else_=Ticket.category
+        )
 
-    tickets = query.all()
+        query = db.query(Ticket)
 
-    # Optional date filtering in Python for simplicity
-    if from_date:
-        start = datetime.fromisoformat(from_date)
-        tickets = [t for t in tickets if t.created_at and t.created_at >= start]
-    if to_date:
-        end = datetime.fromisoformat(to_date)
-        tickets = [t for t in tickets if t.created_at and t.created_at <= end]
+        if status:
+            query = query.filter(Ticket.status == status)
 
-    output = io.StringIO()
-    writer = csv.writer(output)
+        if category:
+            query = query.filter(effective_category == category)
 
-    writer.writerow(["id", "text", "category", "category_manual", "status", "platform", "created_at", "topic"])
+        tickets = query.all()
 
-    for t in tickets:
+        if from_date:
+            start = datetime.fromisoformat(from_date)
+            tickets = [t for t in tickets if t.created_at and t.created_at >= start]
+
+        if to_date:
+            end = datetime.fromisoformat(to_date)
+            tickets = [t for t in tickets if t.created_at and t.created_at <= end]
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+
         writer.writerow([
-            t.id,
-            t.text,
-            t.category,
-            t.category_manual,
-            t.status,
-            t.platform,
-            t.created_at,
-            t.topic
+            "id",
+            "text",
+            "category",
+            "category_original",
+            "category_manual",
+            "status",
+            "platform",
+            "created_at",
+            "topic"
         ])
 
-    output.seek(0)
-    db.close()
+        for t in tickets:
+            final_category = (
+                t.category_manual
+                if t.manually_corrected and t.category_manual
+                else t.category
+            )
 
-    return StreamingResponse(
-        output,
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=tickets_export.csv"}
-    )
+            writer.writerow([
+                t.id,
+                t.text,
+                final_category,
+                t.category,
+                t.category_manual,
+                t.status,
+                t.platform,
+                t.created_at,
+                t.topic
+            ])
+
+        output.seek(0)
+
+        return StreamingResponse(
+            output,
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=tickets_export.csv"}
+        )
+
+    finally:
+        db.close()
