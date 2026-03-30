@@ -26,11 +26,11 @@ for _, row in df.iterrows():
 
         created_at=created_at,
 
-        category="Complaint",
+        category="Negative" if row["sentiment_raw"] == "negative" else "Neutral",
         category_manual=None,
         manually_corrected=False,
 
-        sentiment="Negative" if row["sentiment_raw"] == "negative" else "Neutral",
+
         is_urgent=True if row["urgent_flag"] == 1 else False,
 
         topic="installation issue",

@@ -243,3 +243,29 @@ All errors follow the format:
 ```json
 { "detail": "Ticket not found" }
 ```
+
+---
+
+## Databas format
+
+| Field                | Type     | Description                                                                                        |
+| -------------------- | -------- | -------------------------------------------------------------------------------------------------- |
+| id                   | Integer  | Auto-generated unique ID for each ticket                                                           |
+| text                 | String   | The full text of the comment                                                                       |
+| author               | String   | Name of the person who commented                                                                   |
+| platform             | String   | Facebook, Instagram, etc.                                                                          |
+| source_link          | String   | Direct URL to the original comment                                                                 |
+| created_at           | DateTime | When the customer posted the comment                                                               |
+| category             | String   | AI-predicted category (Complaint, Suggestion, Compliment, Inquiry, Escalation, Out_of_topic, etc.) |
+| category_manual      | String   | Manual corrected category if changed by staff; null otherwise                                      |
+| manually_corrected   | Boolean  | True if staff changed the AI category                                                              |
+| is_urgent            | Boolean  | True if the ticket needs quick attention                                                           |
+| topic                | String   | Main subject extracted from the comment                                                            |
+| topic_manual         | String   | Manual corrected topic if changed by staff; null otherwise                                         |
+| status               | String   | Current processing state (Open, In Progress, Resolved)                                             |
+| assigned_to          | String   | Staff member assigned to the ticket; null if unassigned                                            |
+| resolved_at          | DateTime | Resolution timestamp; null if unresolved                                                           |
+| notes                | String   | Internal notes added by staff                                                                      |
+| ai_confidence        | Float    | Confidence score of the AI prediction                                                              |
+| created_in_system_at | DateTime | Timestamp when the ticket was stored in the system                                                 |
+| updated_at           | DateTime | Timestamp of the last update                                                                       |
