@@ -67,7 +67,7 @@ def get_posts(
                 "text": t.text,
                 "author": t.author,
                 "platform": t.platform,
-                "fb_link": t.fb_link,
+                "source_link": t.source_link,
                 "created_at": t.created_at,
                 "category": final_category,          # final category used by frontend
                 "category_original": t.category,     # optional

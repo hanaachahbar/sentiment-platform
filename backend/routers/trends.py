@@ -72,7 +72,7 @@ def get_trends(from_date: str = None, to_date: str = None):
             "id": t.id,
             "text": t.text,
             "author": t.author,
-            "fb_link": t.fb_link
+            "source_link": t.source_link
         })
 
     # Count tickets in previous period
