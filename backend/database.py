@@ -26,7 +26,6 @@ class Ticket(Base):
     category_manual = Column(String, nullable=True)
     manually_corrected = Column(Boolean, default=False)
 
-    sentiment = Column(String)
     is_urgent = Column(Boolean)
 
     topic = Column(String)
