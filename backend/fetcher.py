@@ -5,7 +5,7 @@ from datetime import datetime
 import httpx
 
 from database import SessionLocal, Ticket
-from ai_mock import predict_category, predict_urgency, predict_topic
+from ai_service import predict_category, predict_urgency, predict_topic
 from sla import calculate_sla_deadline
 
 logger = logging.getLogger(__name__)
@@ -75,7 +75,7 @@ def fetch_facebook_posts():
             except (ValueError, TypeError):
                 created_at = datetime.utcnow()
 
-            # Run mock AI
+            # Run AI inference
             category = predict_category(message)
             is_urgent = predict_urgency(category)
             topic = predict_topic(message)
