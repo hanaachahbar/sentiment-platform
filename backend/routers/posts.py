@@ -76,7 +76,8 @@ def get_posts(
                 "is_urgent": t.is_urgent,
                 "sla_deadline": t.sla_deadline,
                 "status": t.status,
-                "topic": t.topic
+                "topic_id": t.topic_id,
+                "topic": t.topic_ref.topic_name if t.topic_ref else None
             })
 
         return response
