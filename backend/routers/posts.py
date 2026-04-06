@@ -77,7 +77,7 @@ def get_posts(
                 "sla_deadline": t.sla_deadline,
                 "status": t.status,
                 "topic_id": t.topic_id,
-                "topic": t.topic_ref.topic_name if t.topic_ref else None
+                "topic": t.topic_ref.topic_name if t.topic_ref else "Other"
             })
 
         return response
