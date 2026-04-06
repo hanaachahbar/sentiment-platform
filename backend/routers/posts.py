@@ -1,16 +1,19 @@
 from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 from database import SessionLocal, Ticket
+import csv
+import io
 from datetime import datetime
 from sqlalchemy import case, and_
 
 router = APIRouter()
 
-@router.get("/api/posts")
-def get_posts(
-    platform: str = None,
-    category: str = None,
+@router.get("/api/export")
+def export_data(
+    from_date: str = None,
+    to_date: str = None,
     status: str = None,
-    is_urgent: bool = None
+    category: str = None
 ):
     db = SessionLocal()
 
@@ -29,32 +32,38 @@ def get_posts(
 
         query = db.query(Ticket)
 
-        if platform:
-            query = query.filter(Ticket.platform == platform)
+        if status:
+            query = query.filter(Ticket.status == status)
 
         if category:
             query = query.filter(effective_category == category)
 
-        if status:
-            query = query.filter(Ticket.status == status)
-
-        if is_urgent is not None:
-            query = query.filter(Ticket.is_urgent == is_urgent)
-
         tickets = query.all()
 
-        now = datetime.utcnow()
-        updated = False
+        if from_date:
+            start = datetime.fromisoformat(from_date)
+            tickets = [t for t in tickets if t.created_at and t.created_at >= start]
 
-        for t in tickets:
-            if t.status == "open" and t.sla_deadline and now > t.sla_deadline:
-                t.status = "breached"
-                updated = True
+        if to_date:
+            end = datetime.fromisoformat(to_date)
+            tickets = [t for t in tickets if t.created_at and t.created_at <= end]
 
-        if updated:
-            db.commit()
+        output = io.StringIO()
+        writer = csv.writer(output)
 
-        response = []
+        writer.writerow([
+            "id",
+            "text",
+            "category",
+            "category_original",
+            "category_manual",
+            "status",
+            "platform",
+            "source_link",
+            "created_at",
+            "topic"
+        ])
+
         for t in tickets:
             final_category = (
                 t.category_manual
@@ -62,25 +71,26 @@ def get_posts(
                 else t.category
             )
 
-            response.append({
-                "id": t.id,
-                "text": t.text,
-                "author": t.author,
-                "platform": t.platform,
-                "source_link": t.source_link,
-                "created_at": t.created_at,
-                "category": final_category,          # final category used by frontend
-                "category_original": t.category,     # optional
-                "category_manual": t.category_manual,
-                "manually_corrected": t.manually_corrected,
-                "is_urgent": t.is_urgent,
-                "sla_deadline": t.sla_deadline,
-                "status": t.status,
-                "topic_id": t.topic_id,
-                "topic": t.topic_ref.topic_name if t.topic_ref else "Other"
-            })
+            writer.writerow([
+                t.id,
+                t.text,
+                final_category,
+                t.category,
+                t.category_manual,
+                t.status,
+                t.platform,
+                t.source_link,
+                t.created_at,
+                t.topic_ref.topic_name if t.topic_ref else "Other"
+            ])
 
-        return response
+        output.seek(0)
+
+        return StreamingResponse(
+            output,
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=tickets_export.csv"}
+        )
 
     finally:
         db.close()
