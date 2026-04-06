@@ -1,66 +1,58 @@
-import os
 import pandas as pd
 from database import SessionLocal, Ticket, engine, Base
-from datetime import datetime
-from sla import calculate_sla_deadline
 from pathlib import Path
 
-# Clean up existing database first
 BASE_DIR = Path(__file__).resolve().parent
 
-# Drop and recreate schema to apply column renames (fb_link -> source_link)
+# Recreate schema
 Base.metadata.drop_all(bind=engine)
 Base.metadata.create_all(bind=engine)
 
-# Load CSV safely
-csv_path = BASE_DIR / "data" / "comments.csv"
-df = pd.read_csv(csv_path, header=None)
+# Load CSV
+csv_path = BASE_DIR / "data" / "comments_clean_with_reference.csv"
+df = pd.read_csv(csv_path)
 
-# Rename columns
-df.columns = ["platform", "category_raw", "text", "sentiment_raw", "urgent_flag"]
+print("Columns found:")
+print(df.columns.tolist())
+print("Initial shape:", df.shape)
+
+# Remove fully empty rows
+df = df.dropna(how="all")
+
+# Remove rows with missing essential fields
+df = df[df["text"].notna()]
+df = df[df["text"].astype(str).str.strip() != ""]
+df = df[df["platform"].notna()]
+df = df[df["category"].notna()]
+df = df[df["created_at"].notna()]
+df = df[df["sla_deadline"].notna()]
+df = df[df["status"].notna()]
+df = df[df["fetched_at"].notna()]
+
+print("Shape after cleaning:", df.shape)
 
 db = SessionLocal()
 
-# Clear existing data instead of deleting file to avoid PermissionError
+# Clear existing records
 db.query(Ticket).delete()
 db.commit()
-print("🧹 Cleared existing tickets from database.")
+print("Cleared existing tickets from database.")
 
-for idx, row in df.iterrows():
-    created_at = datetime.utcnow()
-
-    # Map sentiment_raw to proper fixed categories: positive, negative, off-topic, suggestion, interrogative
-    sentiment_map = {
-        "positive": "positive",
-        "negative": "negative",
-        "interrogative": "interrogative",
-        "off-topic": "off-topic",
-        "suggestion": "suggestion",
-        "neutral": "negative" # default to negative as requested by user
-    }
-    mapped_category = sentiment_map.get(row["sentiment_raw"].lower(), "negative")
-    
-    # Generate a dummy but valid looking link for source_link
-    source_link = f"https://www.facebook.com/search/posts?q={row['platform']}_{idx}" if row["platform"].lower() == "facebook" else f"https://www.google.com/search?q={row['platform']}_{idx}"
-
+for _, row in df.iterrows():
     ticket = Ticket(
-        text=row["text"],
-        author="unknown",
-        platform=row["platform"],
-        source_link=source_link,
-
-        created_at=created_at,
-
-        category=mapped_category,
-        category_manual=None,
-        manually_corrected=False,
-
-        is_urgent=True if row["urgent_flag"] == 1 else False,
-
-        topic="installation issue",
-
-        sla_deadline=calculate_sla_deadline(created_at),
-        status="open"
+        text=str(row["text"]).strip(),
+        author=str(row["author"]).strip() if pd.notna(row["author"]) and str(row["author"]).strip() != "" else "unknown",
+        platform=str(row["platform"]).strip(),
+        source_link=str(row["fb_link"]).strip() if pd.notna(row["fb_link"]) and str(row["fb_link"]).strip() != "" else None,
+        created_at=pd.to_datetime(row["created_at"]),
+        category=str(row["category"]).strip(),
+        category_manual=str(row["category_manual"]).strip() if pd.notna(row["category_manual"]) and str(row["category_manual"]).strip() != "" else None,
+        manually_corrected=str(row["manually_corrected"]).strip().lower() == "true",
+        is_urgent=str(row["is_urgent"]).strip().lower() == "true",
+        topic=str(row["topic"]).strip() if pd.notna(row["topic"]) and str(row["topic"]).strip() != "" else None,
+        sla_deadline=pd.to_datetime(row["sla_deadline"]),
+        status=str(row["status"]).strip(),
+        fetched_at=pd.to_datetime(row["fetched_at"]),
     )
 
     db.add(ticket)
@@ -68,4 +60,4 @@ for idx, row in df.iterrows():
 db.commit()
 db.close()
 
-print("✅ Data inserted successfully with standardized categories and source links")
+print("Data inserted successfully.")
