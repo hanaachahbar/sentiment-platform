@@ -1,8 +1,7 @@
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime
-from sqlalchemy.orm import declarative_base, sessionmaker
-from datetime import datetime, timedelta
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, ForeignKey
+from sqlalchemy.orm import declarative_base, sessionmaker, relationship
+from datetime import datetime
 from pathlib import Path
-
 
 BASE_DIR = Path(__file__).resolve().parent
 DATABASE_PATH = BASE_DIR / "tickets.db"
@@ -11,6 +10,15 @@ DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
+
+class TopicDictionary(Base):
+    __tablename__ = "topics_dictionary"
+
+    id = Column(Integer, primary_key=True, index=True)
+    topic_name = Column(String, unique=True, nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
 
 class Ticket(Base):
     __tablename__ = "tickets"
@@ -28,7 +36,8 @@ class Ticket(Base):
 
     is_urgent = Column(Boolean)
 
-    topic = Column(String)
+    topic_id = Column(Integer, ForeignKey("topics_dictionary.id"), nullable=True)
+    topic_ref = relationship("TopicDictionary")
 
     sla_deadline = Column(DateTime)
     status = Column(String)
