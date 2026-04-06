@@ -1,94 +1,36 @@
-import React, { useState, useEffect } from 'react';
-import { AlertCircle, Clock, ExternalLink, MessageCircle, ArrowLeft, ArrowRight, ChevronDown, Calendar, X, Download, FileText, Sheet } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { AlertCircle, Clock, ExternalLink, MessageCircle, ArrowLeft, ArrowRight, ChevronDown, Calendar, X, Download, FileText, Loader } from 'lucide-react';
 import logoImg from '../assets/logo.png';
+import { fetchPosts, updateCategory, resolveTicket, exportTickets } from '../api';
 
-// --- MOCK DATE HELPERS ---
-const now = new Date();
-const hoursAgo = (h) => new Date(now.getTime() - h * 60 * 60 * 1000).toISOString();
-const daysAgo = (d) => new Date(now.getTime() - d * 24 * 60 * 60 * 1000).toISOString();
+// SLA formatting helper: compute remaining time from sla_deadline
+function formatSLA(slaDeadline) {
+  if (!slaDeadline) return '—';
+  const now = new Date();
+  const deadline = new Date(slaDeadline);
+  const diffMs = deadline - now;
+  const isNegative = diffMs < 0;
+  const absDiff = Math.abs(diffMs);
+  const hours = Math.floor(absDiff / (1000 * 60 * 60));
+  const minutes = Math.floor((absDiff % (1000 * 60 * 60)) / (1000 * 60));
+  const seconds = Math.floor((absDiff % (1000 * 60)) / 1000);
+  const hh = String(hours).padStart(2, '0');
+  const mm = String(minutes).padStart(2, '0');
+  const ss = String(seconds).padStart(2, '0');
+  return `${isNegative ? '-' : ''}${hh}:${mm}:${ss}`;
+}
 
-const mockFeed = [
-  {
-    id: 1,
-    author: "Sarah Jenkins",
-    text: "Absolutely disappointed with the latest update. The export function completely broke my workflow and I've lost hours of data. Customer support has been unresponsive. Fix this immediately!",
-    category: "Negative",
-    isUrgent: true,
-    platform: "Facebook Post",
-    sla: "04:22:15",
-    status: "Open",
-    timestamp: hoursAgo(2)
-  },
-  {
-    id: 2,
-    author: "Marcus Chen",
-    text: "Hey team, loving the interface so far! Just wondering if there's any plan to add dark mode to the mobile view? It would be a game changer for my night sessions.",
-    category: "Suggestion",
-    isUrgent: false,
-    platform: "Facebook Comment",
-    sla: "28:19:45",
-    status: "Resolved",
-    timestamp: daysAgo(3)
-  },
-  {
-    id: 3,
-    author: "Elena Rodriguez",
-    text: "The new Sentinel analytics have literally cut my reporting time in half. The way it categorizes sentiment automatically is surprisingly accurate. Great job guys!",
-    category: "Positive",
-    isUrgent: false,
-    platform: "Facebook Mention",
-    sla: "42:55:01",
-    status: "Resolved",
-    timestamp: daysAgo(12)
-  },
-  {
-    id: 4,
-    author: "David Wilson",
-    text: "I have been trying to cancel my subscription for three months and I am still being charged. This is unacceptable. I have sent multiple emails and no one has responded.",
-    category: "Negative",
-    isUrgent: true,
-    platform: "Direct Message",
-    sla: "-12:45:00",
-    status: "Breached",
-    timestamp: hoursAgo(18)
-  },
-  {
-    id: 5,
-    author: "Alex Morgan",
-    text: "Does anyone know if there is a way to export the reports into PDF format directly from the dashboard, or do I need to capture it manually?",
-    category: "Interrogative",
-    isUrgent: false,
-    platform: "Facebook Post",
-    sla: "15:30:00",
-    status: "Open",
-    timestamp: daysAgo(5)
-  },
-  {
-    id: 6,
-    author: "Nadia Patel",
-    text: "Server has been down for 20 minutes in our region. Our entire sales team is blocked. Please advise ETA.",
-    category: "Negative",
-    isUrgent: true,
-    platform: "Twitter Mention",
-    sla: "00:15:00",
-    status: "Open",
-    timestamp: hoursAgo(1)
-  },
-  {
-    id: 7,
-    author: "James Ford",
-    text: "Just renewed my annual plan. The loyalty discount applied perfectly. Thanks for the seamless checkout process.",
-    category: "Positive",
-    isUrgent: false,
-    platform: "Facebook Post",
-    sla: "72:00:00",
-    status: "Resolved",
-    timestamp: daysAgo(45) // Last month
-  }
-];
+// Capitalize first letter helper
+function capitalize(str) {
+  if (!str) return '';
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+}
 
 export default function Feed({ selectedTicketId }) {
-  const [items, setItems] = useState(mockFeed);
+  // API data
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   
   // Filter States
   const [filterCat, setFilterCat] = useState('All');
@@ -104,7 +46,7 @@ export default function Feed({ selectedTicketId }) {
   // Time Picker States
   const [isTimeModalOpen, setTimeModalOpen] = useState(false);
   const [activeTimePreset, setActiveTimePreset] = useState('All Time');
-  const [timeRange, setTimeRange] = useState({ start: null, end: null }); // JS Dates
+  const [timeRange, setTimeRange] = useState({ start: null, end: null });
   const [customStartStr, setCustomStartStr] = useState('');
   const [customEndStr, setCustomEndStr] = useState('');
 
@@ -125,20 +67,72 @@ export default function Feed({ selectedTicketId }) {
   });
   const toggleExportColumn = (key) => setExportColumns(prev => ({ ...prev, [key]: !prev[key] }));
 
+  // Available categories (dynamically populated from data)
+  const [availableCategories, setAvailableCategories] = useState(['All']);
+
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+
+  // Load posts from backend
+  const loadPosts = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Build filter params for backend
+      const params = {};
+      if (filterStatus !== 'All') params.status = filterStatus.toLowerCase();
+      if (filterUrg === 'Urgent') params.is_urgent = true;
+      if (filterUrg === 'Not Urgent') params.is_urgent = false;
+      // Category filter done client-side since backend categories may vary
+      
+      const data = await fetchPosts(params);
+      setItems(data);
+
+      const fixedCategories = ['All', 'positive', 'negative', 'off-topic', 'suggestion', 'interrogative'];
+      setAvailableCategories(fixedCategories);
+    } catch (err) {
+      console.error('Feed load error:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [filterStatus, filterUrg]);
+
+  useEffect(() => {
+    loadPosts();
+  }, [loadPosts]);
+
   // Formatting helpers
   const formatDisplayTime = (isoString) => {
+    if (!isoString) return '—';
     const d = new Date(isoString);
     return `${d.toLocaleDateString()} at ${d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
   };
 
-  const todayStr = now.toISOString().split('T')[0];
-
-  // Actions
-  const handleStatusChange = (id, newStatus) => {
-    setItems(items.map(i => i.id === id ? { ...i, status: newStatus } : i));
+  // Actions — call backend then refresh
+  const handleStatusChange = async (id, newStatus) => {
+    try {
+      if (newStatus === 'Resolved' || newStatus === 'resolved') {
+        await resolveTicket(id);
+      }
+      // Optimistically update local state
+      setItems(prev => prev.map(i => i.id === id ? { ...i, status: newStatus.toLowerCase() } : i));
+    } catch (err) {
+      console.error('Status change error:', err);
+      // Refresh to get real state
+      loadPosts();
+    }
   };
-  const handleCategoryChange = (id, newCat) => {
-    setItems(items.map(i => i.id === id ? { ...i, category: newCat } : i));
+
+  const handleCategoryChange = async (id, newCat) => {
+    try {
+      await updateCategory(id, newCat);
+      // Optimistically update local state
+      setItems(prev => prev.map(i => i.id === id ? { ...i, category: newCat, category_manual: newCat, manually_corrected: true } : i));
+    } catch (err) {
+      console.error('Category change error:', err);
+      loadPosts();
+    }
   };
 
   // Time Modal Logic
@@ -148,10 +142,9 @@ export default function Feed({ selectedTicketId }) {
       const end = customEndStr ? new Date(customEndStr + 'T23:59:59') : null;
       setTimeRange({ start, end });
     } else {
-      // Calculate presets
       const n = new Date();
       let start = null;
-      let end = new Date(); // end is always now for past presets
+      let end = new Date();
       
       switch(activeTimePreset) {
         case 'Today':
@@ -180,13 +173,10 @@ export default function Feed({ selectedTicketId }) {
   // Filter Computation
   const filteredItems = items.filter(item => {
     if (filterCat !== 'All' && item.category !== filterCat) return false;
-    if (filterUrg === 'Urgent' && !item.isUrgent) return false;
-    if (filterUrg === 'Not Urgent' && item.isUrgent) return false;
-    if (filterStatus !== 'All' && item.status !== filterStatus) return false;
     
-    // Time Filtering
+    // Time Filtering (client-side on created_at)
     if (timeRange.start || timeRange.end) {
-      const itemDate = new Date(item.timestamp);
+      const itemDate = new Date(item.created_at);
       if (timeRange.start && itemDate < timeRange.start) return false;
       if (timeRange.end && itemDate > timeRange.end) return false;
     }
@@ -197,12 +187,20 @@ export default function Feed({ selectedTicketId }) {
   const displayedItems = filteredItems.slice(0, visibleCount);
 
   const getCategoryColor = (cat) => {
-    switch(cat) {
-      case 'Positive': return 'var(--brand-green)';
-      case 'Negative': return 'var(--brand-blue-muted)'; 
-      case 'Suggestion': return 'var(--brand-blue)';
-      case 'Off-Topic': return 'var(--text-secondary)';
-      case 'Interrogative': return 'var(--brand-green-muted)';
+    if (!cat) return 'var(--text-secondary)';
+    const lower = cat.toLowerCase();
+    switch(lower) {
+      case 'compliment':
+      case 'positive': return 'var(--brand-green)';
+      case 'complaint':
+      case 'negative': return 'var(--brand-blue-muted)'; 
+      case 'suggestion': return 'var(--brand-blue)';
+      case 'out_of_topic':
+      case 'off-topic': return 'var(--text-secondary)';
+      case 'inquiry':
+      case 'interrogative': return 'var(--brand-green-muted)';
+      case 'escalation': return '#e11d48';
+      case 'neutral': return '#64748b';
       default: return 'var(--text-secondary)';
     }
   };
@@ -220,34 +218,55 @@ export default function Feed({ selectedTicketId }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Export logic
-  const handleExportNow = () => {
-    const columnMap = [
-      { key: 'customerName',  label: 'Customer Name',  getter: i => i.author },
-      { key: 'dateTime',      label: 'Date & Time',    getter: i => formatDisplayTime(i.timestamp) },
-      { key: 'commentText',   label: 'Comment Text',   getter: i => i.text },
-      { key: 'category',      label: 'Category',       getter: i => i.category },
-      { key: 'status',        label: 'Status',         getter: i => i.status },
-      { key: 'slaValue',      label: 'SLA Value',      getter: i => i.sla },
-      { key: 'platform',      label: 'Platform',       getter: i => i.platform },
-    ].filter(col => exportColumns[col.key]);
+  // Export logic — call backend API
+  const handleExportNow = async () => {
+    try {
+      const params = {};
+      if (filterStatus !== 'All') params.status = filterStatus.toLowerCase();
+      if (filterCat !== 'All') params.category = filterCat;
+      if (timeRange.start) params.from_date = timeRange.start.toISOString();
+      if (timeRange.end) params.to_date = timeRange.end.toISOString();
 
-    const headers = columnMap.map(c => c.label);
-    const rows = filteredItems.map(item => columnMap.map(c => `"${String(c.getter(item)).replace(/"/g, '""')}"`));
-    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-
-    const blob = new Blob([csvContent], { type: exportFormat === 'csv' ? 'text/csv' : 'text/csv' });
-    const ext = exportFormat === 'csv' ? 'csv' : 'xlsx';
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `telecomsight_export_${new Date().toISOString().split('T')[0]}.${ext}`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    setExportModalOpen(false);
+      const blob = await exportTickets(params);
+      const ext = exportFormat === 'csv' ? 'csv' : 'csv'; // backend only supports CSV
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `telecomsight_export_${new Date().toISOString().split('T')[0]}.${ext}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setExportModalOpen(false);
+    } catch (err) {
+      console.error('Export error:', err);
+      alert('Failed to export. Make sure the backend is running.');
+    }
   };
+
+  if (loading && items.length === 0) {
+    return (
+      <div className="dashboard-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.5)' }}>
+          <Loader size={48} style={{ marginBottom: '16px', animation: 'spin 1s linear infinite' }} />
+          <p style={{ fontSize: '18px', fontWeight: 600 }}>Loading feed data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error && items.length === 0) {
+    return (
+      <div className="dashboard-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <div style={{ textAlign: 'center', color: '#e11d48' }}>
+          <AlertCircle size={48} style={{ marginBottom: '16px' }} />
+          <p style={{ fontSize: '18px', fontWeight: 600 }}>Failed to load feed</p>
+          <p style={{ fontSize: '14px', color: 'rgba(255,255,255,0.4)', marginTop: '8px' }}>{error}</p>
+          <p style={{ fontSize: '14px', color: 'rgba(255,255,255,0.3)', marginTop: '12px' }}>Make sure the backend is running at http://127.0.0.1:8000</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="dashboard-wrapper" onClick={() => { if(openDropdown) setOpenDropdown(null) }}>
@@ -278,7 +297,7 @@ export default function Feed({ selectedTicketId }) {
               </button>
               {openDropdown === 'cat' && (
                 <div className="dropdown-menu-list stun-item">
-                  {['All', 'Positive', 'Negative', 'Suggestion', 'Interrogative', 'Off-Topic'].map(c => (
+                  {availableCategories.map(c => (
                     <button key={c} className={`menu-item ${filterCat === c ? 'active' : ''}`} onClick={() => { setFilterCat(c); setOpenDropdown(null); }}>
                       {c === 'All' ? 'All Categories' : c}
                     </button>
@@ -336,7 +355,7 @@ export default function Feed({ selectedTicketId }) {
           {displayedItems.map((item, index) => (
             <div 
               key={item.id} 
-              className={`card glass-panel hover-lift-shadow stun-item  ${item.isUrgent ? 'urgent-layer' : ''}`}
+              className={`card glass-panel hover-lift-shadow stun-item  ${item.is_urgent ? 'urgent-layer' : ''}`}
               style={{
                 animationDelay: `${0.1 + ((index % 4) * 0.1)}s`, 
                 borderLeft: `6px solid ${getCategoryColor(item.category)}`
@@ -344,16 +363,16 @@ export default function Feed({ selectedTicketId }) {
             >
               <div className="feed-card-header">
                 <div className="feed-user-info">
-                  <span className="feed-author">{item.author}</span>
-                  <span className="feed-platform text-fade"><MessageCircle size={14} style={{marginRight: '6px'}}/> {item.platform} • {formatDisplayTime(item.timestamp)}</span>
+                  <span className="feed-author">{item.author || 'Unknown'}</span>
+                  <span className="feed-platform text-fade"><MessageCircle size={14} style={{marginRight: '6px'}}/> {item.platform || 'Unknown'} • {formatDisplayTime(item.created_at)}</span>
                 </div>
                 
                 <div className="feed-badges">
-                  {item.isUrgent && (
+                  {item.is_urgent && (
                     <span className="badge-urgent"><AlertCircle size={16}/> HIGH URGENCY</span>
                   )}
                   <span className="badge-sla text-fade">
-                    <Clock size={16}/> SLA: <span style={{color: item.status === 'Breached' ? '#e11d48' : 'inherit', marginLeft: '6px'}}>{item.sla}</span>
+                    <Clock size={16}/> SLA: <span style={{color: item.status === 'breached' ? '#e11d48' : 'inherit', marginLeft: '6px'}}>{formatSLA(item.sla_deadline)}</span>
                   </span>
                 </div>
               </div>
@@ -367,45 +386,48 @@ export default function Feed({ selectedTicketId }) {
                   <span className="control-label text-fade">CATEGORY:</span>
                   <select 
                     className="micro-select larger-font"
-                    value={item.category}
+                    value={item.category || ''}
                     onChange={(e) => handleCategoryChange(item.id, e.target.value)}
                   >
-                    <option value="Positive">Positive</option>
-                    <option value="Negative">Negative</option>
-                    <option value="Suggestion">Suggestion</option>
-                    <option value="Interrogative">Interrogative</option>
-                    <option value="Off-Topic">Off-Topic</option>
+                    {availableCategories.filter(c => c !== 'All').map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
                   </select>
+                  {item.manually_corrected && (
+                    <span style={{ fontSize: '11px', color: '#eab308', marginLeft: '6px', fontWeight: 700 }}>✎ corrected</span>
+                  )}
                 </div>
 
                 <div className="feed-control">
                   <span className="control-label text-fade">STATUS:</span>
                   <div className="status-pill-group">
                     <button 
-                      className={`status-pill larger-font ${item.status === 'Open' ? 'active-open' : ''}`}
-                      onClick={() => handleStatusChange(item.id, 'Open')}
+                      className={`status-pill larger-font ${item.status === 'open' ? 'active-open' : ''}`}
+                      onClick={() => handleStatusChange(item.id, 'open')}
                     >Open</button>
                     <button 
-                      className={`status-pill larger-font ${item.status === 'Resolved' ? 'active-resolved' : ''}`}
-                      onClick={() => handleStatusChange(item.id, 'Resolved')}
+                      className={`status-pill larger-font ${item.status === 'resolved' ? 'active-resolved' : ''}`}
+                      onClick={() => handleStatusChange(item.id, 'resolved')}
                     >Resolved</button>
                     <button 
-                      className={`status-pill larger-font ${item.status === 'Breached' ? 'active-breached' : ''}`}
-                      onClick={() => handleStatusChange(item.id, 'Breached')}
+                      className={`status-pill larger-font ${item.status === 'breached' ? 'active-breached' : ''}`}
+                      disabled
                     >Breached</button>
                   </div>
                 </div>
 
-                <a href="#reply" className="facebook-reply-btn btn-inline slide-in-btn ml-auto">
-                  <ExternalLink size={18} className="mr-2" style={{marginRight: '8px'}} />
-                  Reply on Facebook
-                </a>
+                {item.source_link && (
+                  <a href={item.source_link} target="_blank" rel="noreferrer" className="facebook-reply-btn btn-inline slide-in-btn ml-auto">
+                    <ExternalLink size={18} className="mr-2" style={{marginRight: '8px'}} />
+                    Reply on Facebook
+                  </a>
+                )}
               </div>
             </div>
           ))}
 
-          {filteredItems.length === 0 && (
-            <div className="empty-state text-fade mt-8 stun-item" style={{textAlign: 'center', padding: '60px', fontSize: '24px'}}>
+          {filteredItems.length === 0 && !loading && (
+            <div className="empty-state text-fade mt-8 stun-item" style={{textAlign: 'center', padding: '80px 60px', fontSize: '18px', lineHeight: '1.6', borderRadius: '16px', background: 'rgba(30, 41, 59, 0.6)', backdropFilter: 'blur(10px)'}}>
               No feedback items match your filters for the selected time range.
             </div>
           )}
@@ -478,7 +500,7 @@ export default function Feed({ selectedTicketId }) {
             </div>
 
             <div className="time-modal-footer">
-              <button className="massive-apply-btn hover-lift-shadow" onClick={handleApplyTimeFilter}>Apply Filter & Return</button>
+              <button className="massive-apply-btn hover-lift-shadow" onClick={handleApplyTimeFilter}>Apply Filter &amp; Return</button>
             </div>
           </div>
         </div>

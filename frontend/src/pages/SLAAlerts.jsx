@@ -1,5 +1,5 @@
 // src/pages/SLAAlerts.jsx
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   AlertCircle, 
   Clock, 
@@ -7,54 +7,103 @@ import {
   Search,
   HelpCircle,
   Bell,
-  ArrowLeft
+  ArrowLeft,
+  Loader
 } from 'lucide-react';
 import logoImg from '../assets/logo.png';
+import { fetchPosts } from '../api';
 
-// SLA Alert Data - will be populated from Feed
-const mockFeedForAlerts = [
-  { id: 1, author: "Sarah Jenkins", sla: "04:22:15", status: "Open" },
-  { id: 2, author: "Marcus Chen", sla: "28:19:45", status: "Resolved" },
-  { id: 3, author: "David Wilson", sla: "-12:45:00", status: "Open" },
-  { id: 4, author: "Alex Morgan", sla: "15:30:00", status: "Open" },
-  { id: 5, author: "Nadia Patel", sla: "00:15:00", status: "Open" },
-  { id: 6, author: "James Rodriguez", sla: "-02:10:30", status: "Open" },
-  { id: 7, author: "Emily Chen", sla: "06:45:20", status: "Open" },
-  { id: 8, author: "Michael Brown", sla: "-48:30:00", status: "Open" }
-];
+// Compute SLA remaining time from sla_deadline
+function computeSLA(slaDeadline) {
+  if (!slaDeadline) return { totalSeconds: 0, displayTime: '—', isBreach: false, isAtRisk: false };
+  
+  const now = new Date();
+  const deadline = new Date(slaDeadline);
+  const diffMs = deadline - now;
+  const totalSeconds = Math.floor(diffMs / 1000);
+  const isNegative = diffMs < 0;
+  const absDiff = Math.abs(diffMs);
+  const hours = Math.floor(absDiff / (1000 * 60 * 60));
+  const minutes = Math.floor((absDiff % (1000 * 60 * 60)) / (1000 * 60));
+  const seconds = Math.floor((absDiff % (1000 * 60)) / 1000);
+  const hh = String(hours).padStart(2, '0');
+  const mm = String(minutes).padStart(2, '0');
+  const ss = String(seconds).padStart(2, '0');
+  const displayTime = `${isNegative ? '-' : ''}${hh}:${mm}:${ss}`;
 
-const getSLAAlerts = () => {
-  const parseTime = (timeStr) => {
-    const isNegative = timeStr.startsWith('-');
-    const parts = timeStr.replace('-', '').split(':');
-    const hours = parseInt(parts[0]);
-    const minutes = parseInt(parts[1]);
-    const seconds = parseInt(parts[2]);
-    const totalSeconds = hours * 3600 + minutes * 60 + seconds;
-    return isNegative ? -totalSeconds : totalSeconds;
+  return {
+    totalSeconds,
+    displayTime,
+    isBreach: isNegative,
+    isAtRisk: !isNegative && totalSeconds < 3600, // Less than 1 hour remaining
   };
-
-  return mockFeedForAlerts
-    .filter(item => item.status === 'Open')
-    .map(item => {
-      const totalSeconds = parseTime(item.sla);
-      const isBreach = totalSeconds < 0;
-      const isAtRisk = totalSeconds > 0 && totalSeconds < 3600; // Less than 1 hour remaining
-      return {
-        ...item,
-        totalSeconds,
-        isBreach,
-        isAtRisk,
-        displayTime: item.sla
-      };
-    })
-    .sort((a, b) => a.totalSeconds - b.totalSeconds);
-};
+}
 
 export default function SLAAlerts({ onNavigateToDashboard, onNavigateToFeed }) {
-  const alerts = getSLAAlerts();
+  const [alerts, setAlerts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    async function loadAlerts() {
+      setLoading(true);
+      setError(null);
+      try {
+        // Fetch all posts, then filter for SLA-relevant ones
+        const data = await fetchPosts();
+        
+        const slaAlerts = data
+          .filter(t => t.status === 'open' || t.status === 'breached')
+          .map(t => {
+            const sla = computeSLA(t.sla_deadline);
+            return {
+              id: t.id,
+              author: t.author || 'Unknown',
+              text: t.text,
+              platform: t.platform,
+              status: t.status,
+              sla_deadline: t.sla_deadline,
+              ...sla,
+            };
+          })
+          .sort((a, b) => a.totalSeconds - b.totalSeconds); // Most urgent first
+
+        setAlerts(slaAlerts);
+      } catch (err) {
+        console.error('SLA Alerts load error:', err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadAlerts();
+  }, []);
+
   const breachedCount = alerts.filter(a => a.isBreach).length;
   const atRiskCount = alerts.filter(a => a.isAtRisk).length;
+
+  if (loading) {
+    return (
+      <div className="dashboard-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.5)' }}>
+          <Loader size={48} style={{ marginBottom: '16px', animation: 'spin 1s linear infinite' }} />
+          <p style={{ fontSize: '18px', fontWeight: 600 }}>Loading SLA alerts...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="dashboard-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <div style={{ textAlign: 'center', color: '#e11d48' }}>
+          <AlertCircle size={48} style={{ marginBottom: '16px' }} />
+          <p style={{ fontSize: '18px', fontWeight: 600 }}>Failed to load SLA alerts</p>
+          <p style={{ fontSize: '14px', color: 'rgba(255,255,255,0.4)', marginTop: '8px' }}>{error}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="dashboard-wrapper">
@@ -144,7 +193,7 @@ export default function SLAAlerts({ onNavigateToDashboard, onNavigateToFeed }) {
                     <span style={{fontSize: '18px', fontWeight: '700', color: 'white'}}>{alert.author}</span>
                     
                     {/* Time Remaining */}
-                    <div style={{display: 'flex', alignItems: 'center', gap: '8px', color: '#e11d48', fontWeight: '700', fontSize: '18px'}}>
+                    <div style={{display: 'flex', alignItems: 'center', gap: '8px', color: alert.isBreach ? '#e11d48' : '#f59e0b', fontWeight: '700', fontSize: '18px'}}>
                       <Clock size={20} />
                       {alert.displayTime}
                     </div>

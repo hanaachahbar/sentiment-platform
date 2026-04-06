@@ -59,6 +59,7 @@ def export_data(
             "category_manual",
             "status",
             "platform",
+            "source_link",
             "created_at",
             "topic"
         ])
@@ -78,6 +79,7 @@ def export_data(
                 t.category_manual,
                 t.status,
                 t.platform,
+                t.source_link,
                 t.created_at,
                 t.topic
             ])

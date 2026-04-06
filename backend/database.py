@@ -19,7 +19,7 @@ class Ticket(Base):
     text = Column(String)
     author = Column(String)
     platform = Column(String)
-    fb_link = Column(String)
+    source_link = Column(String)
     created_at = Column(DateTime)
 
     category = Column(String)

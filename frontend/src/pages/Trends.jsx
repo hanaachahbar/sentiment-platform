@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -6,7 +6,9 @@ import {
   X,
   AlertCircle,
   Clock,
-  ChevronRight
+  ChevronRight,
+  Loader,
+  Minus
 } from 'lucide-react';
 import { 
   AreaChart, 
@@ -18,93 +20,120 @@ import {
   ResponsiveContainer
 } from 'recharts';
 import logoImg from '../assets/logo.png';
+import { fetchTrends } from '../api';
 
-// --- MOCK DATA ---
-const trendChartData = [
-  { name: 'MON', outages: 40, billing: 24, darkmode: 10, navigation: 5 },
-  { name: 'TUE', outages: 55, billing: 22, darkmode: 15, navigation: 8 },
-  { name: 'WED', outages: 62, billing: 35, darkmode: 25, navigation: 12 },
-  { name: 'THU', outages: 78, billing: 30, darkmode: 20, navigation: 18 },
-  { name: 'FRI', outages: 85, billing: 38, darkmode: 35, navigation: 15 },
-  { name: 'SAT', outages: 75, billing: 42, darkmode: 30, navigation: 10 },
-  { name: 'SUN', outages: 95, billing: 40, darkmode: 45, navigation: 22 },
-];
-
-const trendCards = [
-  {
-    id: 'outage',
-    title: 'Internet Outage',
-    mentions: 156,
-    change: '+24%',
-    type: 'critical',
-    color: '#3b82f6',
-    progress: 75,
-    comments: [
-      { id: 1, author: "Ahmed K.", text: "Still no internet in Algiers center since this morning. This is affecting my work!", platform: "Facebook Post", timestamp: "2h ago" },
-      { id: 2, author: "Sofia B.", text: "Algerie Telecom, please check fiber connection in Oran. Multiple neighbors reporting issues.", platform: "Facebook Post", timestamp: "4h ago" },
-      { id: 3, author: "Karim L.", text: "Outage is becoming a daily routine. When will this be fixed permanently?", platform: "Facebook Comment", timestamp: "5h ago" }
-    ]
-  },
-  {
-    id: 'billing',
-    title: 'Billing Discrepancies',
-    mentions: 84,
-    change: '-4%',
-    type: 'financial',
-    color: '#0f5132', // Theater Green
-    progress: 60,
-    comments: [
-      { id: 4, author: "Omar T.", text: "Why am I being charged for extra data when I have an unlimited plan?", platform: "Facebook Comment", timestamp: "1d ago" },
-      { id: 5, author: "Lina M.", text: "The bill payment portal is not showing my last payment. Please verify.", platform: "Facebook Post", timestamp: "2d ago" }
-    ]
-  },
-  {
-    id: 'darkmode',
-    title: 'Dark Mode Request',
-    mentions: 42,
-    change: '+110%',
-    type: 'growth',
-    color: '#10b981',
-    progress: 40,
-    comments: [
-      { id: 6, author: "Samy R.", text: "Please add dark mode to the customer portal. It's too bright at night!", platform: "Facebook Comment", timestamp: "3h ago" },
-      { id: 7, author: "Maya Z.", text: "Dark mode for the mobile app would be amazing. Great app otherwise!", platform: "Facebook Post", timestamp: "6h ago" }
-    ]
-  },
-  {
-    id: 'nav',
-    title: 'Navigation Lag',
-    mentions: 19,
-    change: 'stable',
-    type: 'friction',
-    color: '#64748b',
-    progress: 25,
-    comments: [
-      { id: 8, author: "Yassine H.", text: "The menu transition is a bit slow on older devices. Can we optimize this?", platform: "Facebook Post", timestamp: "5d ago" }
-    ]
-  }
-];
+const TREND_COLORS = ['#3b82f6', '#0f5132', '#10b981', '#64748b', '#e11d48', '#eab308', '#8b5cf6', '#ec4899'];
 
 export default function Trends({ initialTrendId, onClearInitialTrend }) {
   const [modalTrend, setModalTrend] = useState(null);
+  const [trendCards, setTrendCards] = useState([]);
+  const [periodInfo, setPeriodInfo] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Fetch trends from backend
+  useEffect(() => {
+    async function loadTrends() {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await fetchTrends();
+        const cards = (data.trends || []).map((t, i) => ({
+          id: t.topic || `trend-${i}`,
+          title: t.topic || 'Unknown Topic',
+          mentions: t.count || 0,
+          change: t.change || '0 vs previous period',
+          direction: t.direction || 'stable',
+          type: t.direction === 'up' ? 'critical' : t.direction === 'down' ? 'declining' : 'stable',
+          color: TREND_COLORS[i % TREND_COLORS.length],
+          progress: Math.min(100, (t.count || 0) * 2), // Rough progress bar
+          comments: (t.tickets || []).map(ticket => ({
+            id: ticket.id,
+            author: ticket.author || 'Unknown',
+            text: ticket.text || '',
+            platform: 'Facebook Post',
+            timestamp: 'Recent',
+            source_link: ticket.source_link || '',
+          })),
+        }));
+        setTrendCards(cards);
+        setPeriodInfo({
+          current: data.current_period,
+          previous: data.previous_period,
+        });
+      } catch (err) {
+        console.error('Trends load error:', err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadTrends();
+  }, []);
 
   // Handle cross-page navigation from Dashboard
-  React.useEffect(() => {
-    if (initialTrendId) {
+  useEffect(() => {
+    if (initialTrendId && trendCards.length > 0) {
       const trend = trendCards.find(t => t.id === initialTrendId);
       if (trend) {
         setModalTrend(trend);
         onClearInitialTrend();
       }
     }
-  }, [initialTrendId, onClearInitialTrend]);
+  }, [initialTrendId, onClearInitialTrend, trendCards]);
 
   // Close modal on Escape
-  React.useEffect(() => {
+  useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') setModalTrend(null); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  // Build chart data from top trends (simulate daily distribution)
+  const trendChartData = (() => {
+    const days = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+    return days.map((name, i) => {
+      const point = { name };
+      trendCards.slice(0, 4).forEach((trend, j) => {
+        // Distribute mentions across days with some variation
+        const base = Math.max(1, Math.floor(trend.mentions / 7));
+        const variation = Math.floor(Math.random() * base * 0.6);
+        point[`topic_${j}`] = base + (i % 2 === 0 ? variation : -Math.floor(variation / 2));
+      });
+      return point;
+    });
+  })();
+
+  // Delta display helper
+  const getDeltaDisplay = (change) => {
+    if (!change) return { text: 'stable', cls: 'neutral' };
+    if (change.startsWith('+')) return { text: change.split(' ')[0], cls: 'pos' };
+    if (change.startsWith('-')) return { text: change.split(' ')[0], cls: 'neg' };
+    return { text: 'stable', cls: 'neutral' };
+  };
+
+  if (loading) {
+    return (
+      <div className="dashboard-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.5)' }}>
+          <Loader size={48} style={{ marginBottom: '16px', animation: 'spin 1s linear infinite' }} />
+          <p style={{ fontSize: '18px', fontWeight: 600 }}>Loading trend data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="dashboard-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <div style={{ textAlign: 'center', color: '#e11d48' }}>
+          <AlertCircle size={48} style={{ marginBottom: '16px' }} />
+          <p style={{ fontSize: '18px', fontWeight: 600 }}>Failed to load trends</p>
+          <p style={{ fontSize: '14px', color: 'rgba(255,255,255,0.4)', marginTop: '8px' }}>{error}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="dashboard-wrapper">
@@ -116,7 +145,14 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
             <img src={logoImg} alt="Sentiment Platform Logo" className="feed-logo" />
             <div className="feed-title-section">
               <h1 className="feed-title text-primary" style={{ fontSize: '36px' }}>Trend Analysis</h1>
-              <p className="section-sub text-fade mt-2" style={{ fontSize: '18px' }}>Surface emerging customer patterns and intelligence across all channels.</p>
+              <p className="section-sub text-fade mt-2" style={{ fontSize: '18px' }}>
+                Surface emerging customer patterns and intelligence across all channels.
+                {periodInfo && (
+                  <span style={{ display: 'block', marginTop: '4px', fontSize: '14px', color: 'rgba(255,255,255,0.3)' }}>
+                    Analyzing {new Date(periodInfo.current?.from).toLocaleDateString()} — {new Date(periodInfo.current?.to).toLocaleDateString()} vs previous period
+                  </span>
+                )}
+              </p>
             </div>
           </div>
         </div>
@@ -130,10 +166,11 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
             </div>
             <div className="card-action">
               <div className="legend-pills">
-                <span className="legend-pill"><i style={{ backgroundColor: '#3b82f6' }}></i> Outages</span>
-                <span className="legend-pill"><i style={{ backgroundColor: '#0f5132' }}></i> Billing</span>
-                <span className="legend-pill"><i style={{ backgroundColor: '#10b981' }}></i> Features</span>
-                <span className="legend-pill"><i style={{ backgroundColor: '#64748b' }}></i> UI/UX</span>
+                {trendCards.slice(0, 4).map((t, i) => (
+                  <span key={t.id} className="legend-pill">
+                    <i style={{ backgroundColor: t.color }}></i> {t.title}
+                  </span>
+                ))}
               </div>
             </div>
           </div>
@@ -141,14 +178,12 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={trendChartData}>
                 <defs>
-                  <linearGradient id="colorOutage" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                  </linearGradient>
-                  <linearGradient id="colorBilling" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0f5132" stopOpacity={0.2}/>
-                    <stop offset="100%" stopColor="#0f5132" stopOpacity={0}/>
-                  </linearGradient>
+                  {trendCards.slice(0, 4).map((t, i) => (
+                    <linearGradient key={`grad-${i}`} id={`colorTrend${i}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={t.color} stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor={t.color} stopOpacity={0}/>
+                    </linearGradient>
+                  ))}
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }} />
@@ -157,10 +192,19 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
                   contentStyle={{ backgroundColor: 'rgba(15, 28, 46, 0.9)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
                   itemStyle={{ color: '#fff' }}
                 />
-                <Area type="monotone" dataKey="outages" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorOutage)" />
-                <Area type="monotone" dataKey="billing" stroke="#0f5132" strokeWidth={3} fillOpacity={1} fill="url(#colorBilling)" />
-                <Area type="monotone" dataKey="darkmode" stroke="#10b981" strokeWidth={2} strokeDasharray="5 5" fill="none" />
-                <Area type="monotone" dataKey="navigation" stroke="#64748b" strokeWidth={2} strokeDasharray="3 3" fill="none" />
+                {trendCards.slice(0, 4).map((t, i) => (
+                  <Area
+                    key={t.id}
+                    type="monotone"
+                    dataKey={`topic_${i}`}
+                    name={t.title}
+                    stroke={t.color}
+                    strokeWidth={i < 2 ? 3 : 2}
+                    strokeDasharray={i >= 2 ? '5 5' : undefined}
+                    fillOpacity={i < 2 ? 1 : 0}
+                    fill={i < 2 ? `url(#colorTrend${i})` : 'none'}
+                  />
+                ))}
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -168,62 +212,74 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
 
         {/* Trends Grid — 4 columns, each with 2 preview comments */}
         <div className="trends-4col-grid">
-          {trendCards.map((trend, index) => (
-            <div
-              key={trend.id}
-              className="trend-card-full glass-panel stun-item"
-              style={{
-                animationDelay: `${0.2 + index * 0.08}s`,
-                borderTop: `4px solid ${trend.color}`,
-                '--trend-color': trend.color,
-              }}
-            >
-              {/* Title + Stats */}
-              <div className="tcf-stats">
-                <h3 className="tcf-title">{trend.title}</h3>
-                <div className="tcf-numbers">
-                  <span className="tcf-count" style={{ color: trend.color }}>{trend.mentions}</span>
-                  <span className="tcf-unit">mentions</span>
-                  <span className={`tcf-delta ${trend.change.includes('+') ? 'pos' : trend.change === 'stable' ? 'neutral' : 'neg'}`}>
-                    {trend.change}
-                  </span>
-                </div>
-                <div className="tcf-progress-track">
-                  <div className="tcf-progress-fill" style={{ width: `${trend.progress}%`, background: trend.color }}></div>
-                </div>
-              </div>
-
-              {/* 2 Preview Comments */}
-              <div className="tcf-comments-preview">
-                {trend.comments.slice(0, 2).map((c, ci) => (
-                  <div key={c.id} className="tcf-comment-item" style={{ animationDelay: `${0.05 * ci}s` }}>
-                    <div className="tcf-comment-top">
-                      <span className="tcf-comment-author">{c.author}</span>
-                      <span className="tcf-comment-time">{c.timestamp}</span>
-                    </div>
-                    <p className="tcf-comment-text">"{c.text}"</p>
-                    <a href="https://facebook.com" target="_blank" rel="noreferrer" className="tcf-reply-link">
-                      <ExternalLink size={12} /> Reply on Facebook
-                    </a>
-                  </div>
-                ))}
-
-                {trend.comments.length === 0 && (
-                  <div className="tcf-empty">No signals yet for this trend.</div>
-                )}
-              </div>
-
-              {/* Show More Button */}
-              <button
-                className="tcf-show-more-btn"
-                style={{ '--trend-color': trend.color, borderColor: `${trend.color}50`, color: trend.color }}
-                onClick={() => setModalTrend(trend)}
+          {trendCards.length > 0 ? trendCards.map((trend, index) => {
+            const delta = getDeltaDisplay(trend.change);
+            return (
+              <div
+                key={trend.id}
+                className="trend-card-full glass-panel stun-item"
+                style={{
+                  animationDelay: `${0.2 + index * 0.08}s`,
+                  borderTop: `4px solid ${trend.color}`,
+                  '--trend-color': trend.color,
+                }}
               >
-                <ChevronRight size={16} style={{ marginRight: '6px' }} />
-                Show More · {trend.comments.length} signal{trend.comments.length !== 1 ? 's' : ''}
-              </button>
+                {/* Title + Stats */}
+                <div className="tcf-stats">
+                  <h3 className="tcf-title">{trend.title}</h3>
+                  <div className="tcf-numbers">
+                    <span className="tcf-count" style={{ color: trend.color }}>{trend.mentions}</span>
+                    <span className="tcf-unit">mentions</span>
+                    <span className={`tcf-delta ${delta.cls}`}>
+                      {trend.direction === 'up' && <TrendingUp size={12} style={{ marginRight: '4px' }} />}
+                      {trend.direction === 'down' && <TrendingDown size={12} style={{ marginRight: '4px' }} />}
+                      {trend.direction === 'stable' && <Minus size={12} style={{ marginRight: '4px' }} />}
+                      {delta.text}
+                    </span>
+                  </div>
+                  <div className="tcf-progress-track">
+                    <div className="tcf-progress-fill" style={{ width: `${trend.progress}%`, background: trend.color }}></div>
+                  </div>
+                </div>
+
+                {/* 2 Preview Comments */}
+                <div className="tcf-comments-preview">
+                  {trend.comments.slice(0, 2).map((c, ci) => (
+                    <div key={c.id} className="tcf-comment-item" style={{ animationDelay: `${0.05 * ci}s` }}>
+                      <div className="tcf-comment-top">
+                        <span className="tcf-comment-author">{c.author}</span>
+                        <span className="tcf-comment-time">{c.timestamp}</span>
+                      </div>
+                      <p className="tcf-comment-text">"{c.text}"</p>
+                      {c.fb_link && (
+                        <a href={c.fb_link} target="_blank" rel="noreferrer" className="tcf-reply-link">
+                          <ExternalLink size={12} /> Reply on Facebook
+                        </a>
+                      )}
+                    </div>
+                  ))}
+
+                  {trend.comments.length === 0 && (
+                    <div className="tcf-empty">No signals yet for this trend.</div>
+                  )}
+                </div>
+
+                {/* Show More Button */}
+                <button
+                  className="tcf-show-more-btn"
+                  style={{ '--trend-color': trend.color, borderColor: `${trend.color}50`, color: trend.color }}
+                  onClick={() => setModalTrend(trend)}
+                >
+                  <ChevronRight size={16} style={{ marginRight: '6px' }} />
+                  Show More · {trend.comments.length} signal{trend.comments.length !== 1 ? 's' : ''}
+                </button>
+              </div>
+            );
+          }) : (
+            <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '60px', color: 'rgba(255,255,255,0.3)', fontSize: '20px' }}>
+              No trends detected in the current analysis period.
             </div>
-          ))}
+          )}
         </div>
 
       </div>
@@ -240,10 +296,10 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
             <div className="time-modal-header" style={{ borderBottom: `2px solid ${modalTrend.color}40` }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <span style={{ fontSize: '12px', fontWeight: 800, letterSpacing: '1px', color: modalTrend.color, textTransform: 'uppercase' }}>
-                  {modalTrend.label}
+                  {modalTrend.type}
                 </span>
                 <h2 className="text-primary" style={{ fontSize: '28px' }}>
-                  List of Comments:
+                  {modalTrend.title} — Comments
                 </h2>
                 <p className="text-fade" style={{ fontSize: '16px' }}>
                   {modalTrend.comments.length} customer signal{modalTrend.comments.length !== 1 ? 's' : ''} · {modalTrend.mentions} total mentions
@@ -269,10 +325,12 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
                   <p className="signal-text-large" style={{ fontSize: '20px', margin: '14px 0 18px' }}>{c.text}</p>
                   <div className="signal-actions">
                     <span className="text-fade" style={{ fontSize: '14px' }}>{c.platform}</span>
-                    <a href="https://facebook.com" target="_blank" rel="noreferrer" className="facebook-reply-btn btn-inline">
-                      <ExternalLink size={14} style={{ marginRight: '6px' }} />
-                      Reply on Facebook
-                    </a>
+                    {c.source_link && (
+                      <a href={c.source_link} target="_blank" rel="noreferrer" className="facebook-reply-btn btn-inline">
+                        <ExternalLink size={14} style={{ marginRight: '6px' }} />
+                        Reply on Facebook
+                      </a>
+                    )}
                   </div>
                 </div>
               ))}
@@ -346,6 +404,8 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
           font-weight: 700;
           padding: 3px 10px;
           border-radius: 99px;
+          display: inline-flex;
+          align-items: center;
         }
         .tcf-delta.pos  { color: #10b981; background: rgba(16,185,129,0.12); }
         .tcf-delta.neg  { color: #e11d48; background: rgba(225,29,72,0.12); }
@@ -494,5 +554,3 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
     </div>
   );
 }
-
-

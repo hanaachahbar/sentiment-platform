@@ -1,5 +1,5 @@
 // src/pages/Dashboard.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   TrendingUp,
   Search,
@@ -8,7 +8,8 @@ import {
   ArrowRight,
   TrendingDown,
   Sparkles,
-  AlertCircle
+  AlertCircle,
+  Loader
 } from 'lucide-react';
 import logoImg from '../assets/logo.png';
 import { 
@@ -23,39 +24,139 @@ import {
   Cell,
   Sector
 } from 'recharts';
+import { fetchPosts, fetchStats, fetchTrends } from '../api';
 
-// --- MOCK DATA ---
-const activityData = [
-  { name: '01 MAY', volume: 120 }, { name: '05 MAY', volume: 210 },
-  { name: '10 MAY', volume: 150 }, { name: '15 MAY', volume: 380 },
-  { name: '20 MAY', volume: 220 }, { name: '25 MAY', volume: 450 },
-  { name: '30 MAY', volume: 280 }
+// Color palette for categories
+const CATEGORY_COLORS = [
+  'var(--color-1)',  // Blue
+  'var(--color-2)',  // Green
+  'var(--color-3)',  // Muted Blue
+  'var(--color-5)',  // Muted Green
+  'var(--color-4)',  // Accent
+  '#e11d48',         // Red
+  '#eab308',         // Yellow
+  '#8b5cf6',         // Purple
 ];
 
-const categoryData = [
-  { name: 'positive', value: 4556, color: 'var(--color-1)' }, // Blue
-  { name: 'negative', value: 3200, color: 'var(--color-2)' },   // Green
-  { name: 'interrogative', value: 1500, color: 'var(--color-3)' },   // Muted Blue
-  { name: 'suggestion', value: 2800, color: 'var(--color-5)' } , // Muted Green
-   { name: 'off-topic', value: 2800, color: 'var(--color-4)' }  // Muted Green
-];
-
-const trends = [
-  { id: 'outage', name: 'Internet Outage', desc: 'Critical connectivity signals', color: '#3b82f6' },
-  { id: 'billing', name: 'Billing Discrepancies', desc: 'Financial feedback & issues', color: '#0f5132' },
-  { id: 'darkmode', name: 'Dark Mode Request', desc: 'Top requested features', color: '#10b981' },
-  { id: 'nav', name: 'Navigation Lag', desc: 'User experience friction', color: '#64748b' }
-];
-
-// Sparkline Mock Data
-const spark1 = [{v: 10}, {v: 25}, {v: 15}, {v: 40}, {v: 30}, {v: 50}, {v: 70}];
-const spark2 = [{v: 50}, {v: 40}, {v: 45}, {v: 30}, {v: 20}, {v: 35}, {v: 15}];
-const spark3 = [{v: 20}, {v: 35}, {v: 25}, {v: 40}, {v: 30}, {v: 45}, {v: 60}];
-const spark4 = [{v: 60}, {v: 55}, {v: 65}, {v: 50}, {v: 45}, {v: 55}, {v: 40}];
+const TREND_COLORS = ['#3b82f6', '#0f5132', '#10b981', '#64748b', '#e11d48', '#eab308'];
 
 // --- COMPONENT ---
 export default function Dashboard({ onNavigateToTrend, onNavigateToSLAAlerts }) {
   const [activeIndex, setActiveIndex] = useState(1);
+
+  // API state
+  const [stats, setStats] = useState(null);
+  const [posts, setPosts] = useState([]);
+  const [trends, setTrends] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Fetch all data on mount
+  useEffect(() => {
+    async function loadDashboard() {
+      setLoading(true);
+      setError(null);
+      try {
+        const [statsData, postsData, trendsData] = await Promise.all([
+          fetchStats(),
+          fetchPosts(),
+          fetchTrends(),
+        ]);
+        setStats(statsData);
+        setPosts(postsData);
+        setTrends(trendsData.trends || []);
+      } catch (err) {
+        console.error('Dashboard load error:', err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadDashboard();
+  }, []);
+
+  // --- COMPUTED DATA ---
+
+  // KPI: Open tickets count
+  const openTickets = posts.filter(p => p.status === 'open').length;
+
+  // KPI: SLA breach rate
+  const totalTickets = posts.length;
+  const breachedTickets = posts.filter(p => p.status === 'breached').length;
+  const slaBreachRate = totalTickets > 0 ? ((breachedTickets / totalTickets) * 100).toFixed(1) : '0.0';
+
+  // KPI: Avg response time (for resolved tickets, hours between created_at and now)
+  const resolvedTickets = posts.filter(p => p.status === 'resolved' && p.created_at);
+  const avgResponseHours = resolvedTickets.length > 0
+    ? (resolvedTickets.reduce((sum, t) => {
+        const created = new Date(t.created_at);
+        const now = new Date();
+        return sum + (now - created) / (1000 * 60 * 60);
+      }, 0) / resolvedTickets.length).toFixed(1)
+    : '—';
+
+  // Daily Activity Flow — group posts by date
+  const activityData = (() => {
+    const counts = {};
+    posts.forEach(p => {
+      if (!p.created_at) return;
+      const d = new Date(p.created_at);
+      const key = d.toLocaleDateString('en-US', { day: '2-digit', month: 'short' }).toUpperCase();
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    return Object.entries(counts)
+      .map(([name, volume]) => ({ name, volume }))
+      .slice(-7); // last 7 days
+  })();
+
+  // Category distribution for donut chart
+  const categoryData = (() => {
+    const counts = {};
+    posts.forEach(p => {
+      // Normalize to lowercase to avoid duplicates like "Negative" vs "negative"
+      const cat = (p.category || 'unknown').toLowerCase();
+      counts[cat] = (counts[cat] || 0) + 1;
+    });
+
+    // Map to display names and colors
+    return Object.entries(counts).map(([name, value], i) => ({
+      name: name.charAt(0).toUpperCase() + name.slice(1), // Capitalize for display
+      value,
+      color: CATEGORY_COLORS[i % CATEGORY_COLORS.length],
+    }));
+  })();
+
+  const categoryTotal = categoryData.reduce((sum, c) => sum + c.value, 0);
+
+  // Sparkline data from posts (group by recent days for each KPI)
+  const buildSparkline = (filterFn) => {
+    const days = {};
+    const now = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      days[d.toDateString()] = 0;
+    }
+    posts.filter(filterFn).forEach(p => {
+      if (!p.created_at) return;
+      const key = new Date(p.created_at).toDateString();
+      if (key in days) days[key]++;
+    });
+    return Object.values(days).map(v => ({ v }));
+  };
+
+  const spark1 = buildSparkline(() => true); // all mentions
+  const spark2 = buildSparkline(p => p.status === 'open'); // open tickets
+  const spark3 = buildSparkline(p => p.status === 'resolved'); // resolved
+  const spark4 = buildSparkline(p => p.status === 'breached'); // breached
+
+  // Trend cards — map from API response
+  const trendCards = trends.slice(0, 4).map((t, i) => ({
+    id: t.topic || `trend-${i}`,
+    name: t.topic || 'Unknown Topic',
+    desc: `${t.count} mentions · ${t.change}`,
+    color: TREND_COLORS[i % TREND_COLORS.length],
+  }));
 
   // Custom active shape for the Donut Chart (pop-out effect)
   const renderActiveShape = (props) => {
@@ -69,7 +170,7 @@ export default function Dashboard({ onNavigateToTrend, onNavigateToSLAAlerts }) 
           cx={cx}
           cy={cy}
           innerRadius={innerRadius}
-          outerRadius={outerRadius + 8} // Explode outward
+          outerRadius={outerRadius + 8}
           startAngle={startAngle}
           endAngle={endAngle}
           fill={fill}
@@ -78,6 +179,30 @@ export default function Dashboard({ onNavigateToTrend, onNavigateToSLAAlerts }) 
       </g>
     );
   };
+
+  if (loading) {
+    return (
+      <div className="dashboard-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.5)' }}>
+          <Loader size={48} className="spin-animation" style={{ marginBottom: '16px', animation: 'spin 1s linear infinite' }} />
+          <p style={{ fontSize: '18px', fontWeight: 600 }}>Loading dashboard data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="dashboard-wrapper" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+        <div style={{ textAlign: 'center', color: '#e11d48' }}>
+          <AlertCircle size={48} style={{ marginBottom: '16px' }} />
+          <p style={{ fontSize: '18px', fontWeight: 600 }}>Failed to load dashboard</p>
+          <p style={{ fontSize: '14px', color: 'rgba(255,255,255,0.4)', marginTop: '8px' }}>{error}</p>
+          <p style={{ fontSize: '14px', color: 'rgba(255,255,255,0.3)', marginTop: '12px' }}>Make sure the backend is running at http://127.0.0.1:8000</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="dashboard-wrapper">
@@ -125,9 +250,9 @@ export default function Dashboard({ onNavigateToTrend, onNavigateToSLAAlerts }) 
           <div className="kpi-spark-card glass-panel hover-lift-shadow stun-item" style={{animationDelay: '0.1s', borderLeft: '4px solid var(--color-1)'}}>
             <div className="kpi-spark-content">
               <span className="kpi-spark-title">Total Mentions <span className="text-fade">/ Today</span></span>
-              <div className="kpi-spark-value">1,284</div>
+              <div className="kpi-spark-value">{stats?.total_posts_today?.toLocaleString() || '0'}</div>
               <div className="kpi-spark-status" style={{color: 'var(--color-1)'}}>
-                <TrendingUp size={14} /> +23% vs yesterday
+                <TrendingUp size={14} /> {totalTickets.toLocaleString()} total
               </div>
             </div>
             <div className="kpi-spark-graph">
@@ -149,9 +274,9 @@ export default function Dashboard({ onNavigateToTrend, onNavigateToSLAAlerts }) 
           <div className="kpi-spark-card glass-panel stun-item" style={{animationDelay: '0.2s', borderLeft: '4px solid #e11d48'}}>
             <div className="kpi-spark-content">
               <span className="kpi-spark-title">Open Tickets <span className="text-fade">/ Unresolved</span></span>
-              <div className="kpi-spark-value" style={{color: '#e11d48'}}>47</div>
+              <div className="kpi-spark-value" style={{color: '#e11d48'}}>{openTickets}</div>
               <div className="kpi-spark-status" style={{color: '#e11d48'}}>
-                <TrendingUp size={14} /> +8 since this morning
+                <TrendingUp size={14} /> {breachedTickets} breached
               </div>
             </div>
             <div className="kpi-spark-graph">
@@ -173,9 +298,9 @@ export default function Dashboard({ onNavigateToTrend, onNavigateToSLAAlerts }) 
           <div className="kpi-spark-card glass-panel hover-lift-shadow stun-item" style={{animationDelay: '0.3s', borderLeft: '4px solid var(--color-3)'}}>
             <div className="kpi-spark-content">
               <span className="kpi-spark-title">Avg. Response <span className="text-fade">/ Time</span></span>
-              <div className="kpi-spark-value">3.2 hr</div>
+              <div className="kpi-spark-value">{avgResponseHours === '—' ? '—' : `${avgResponseHours} hr`}</div>
               <div className="kpi-spark-status" style={{color: 'var(--brand-green)'}}>
-                <TrendingDown size={14} /> -18% vs last week
+                <TrendingDown size={14} /> across {resolvedTickets.length} resolved
               </div>
             </div>
             <div className="kpi-spark-graph">
@@ -197,9 +322,9 @@ export default function Dashboard({ onNavigateToTrend, onNavigateToSLAAlerts }) 
           <div className="kpi-spark-card glass-panel hover-lift-shadow stun-item" style={{animationDelay: '0.4s', borderLeft: '4px solid #eab308'}}>
             <div className="kpi-spark-content">
               <span className="kpi-spark-title">SLA Breach Rate <span className="text-fade">/ 48h</span></span>
-              <div className="kpi-spark-value" style={{color: '#eab308'}}>12.4%</div>
+              <div className="kpi-spark-value" style={{color: '#eab308'}}>{slaBreachRate}%</div>
               <div className="kpi-spark-status" style={{color: '#e11d48'}}>
-                <TrendingUp size={14} /> +2.1% vs last week
+                <AlertCircle size={14} /> {stats?.sla_breaches || 0} breaches total
               </div>
             </div>
             <div className="kpi-spark-graph">
@@ -224,7 +349,7 @@ export default function Dashboard({ onNavigateToTrend, onNavigateToSLAAlerts }) 
           <div className="card-header pb-0">
             <div className="card-title">
               <h3 className="section-heading">Daily Activity Flow</h3>
-              <p className="section-sub text-fade mt-2">Volume of traffic crossing major endpoints over the last 30 days.</p>
+              <p className="section-sub text-fade mt-2">Volume of ticket activity grouped by day.</p>
             </div>
             <div className="card-action">
               <span className="volume-indicator pulse-animation" style={{backgroundColor: 'var(--color-2)'}}></span> LIVE
@@ -315,14 +440,14 @@ export default function Dashboard({ onNavigateToTrend, onNavigateToSLAAlerts }) 
                       <span className="legend-dot" style={{backgroundColor: cat.color}}></span>
                       <span className="legend-name">{cat.name}</span>
                     </div>
-                    <span className="legend-value">{Math.round((cat.value / 12056) * 100)}%</span>
+                    <span className="legend-value">{categoryTotal > 0 ? Math.round((cat.value / categoryTotal) * 100) : 0}%</span>
                   </div>
                 ))}
               </div>
             </div>
           </div>
 
-          {/* Memberships / Trends Float List */}
+          {/* Trends Float List */}
           <div className="card glass-panel hover-lift-shadow stun-item" style={{animationDelay: '0.7s'}}>
             <div className="card-header border-none">
               <div className="card-title">
@@ -331,7 +456,7 @@ export default function Dashboard({ onNavigateToTrend, onNavigateToSLAAlerts }) 
               </div>
             </div>
             <div className="floating-list">
-              {trends.map((trend, i) => (
+              {trendCards.length > 0 ? trendCards.map((trend, i) => (
                 <div 
                   className="float-card hover-float-card stun-item" 
                   key={trend.id} 
@@ -347,7 +472,11 @@ export default function Dashboard({ onNavigateToTrend, onNavigateToSLAAlerts }) 
                     <ArrowRight size={20} className="arrow-icon" />
                   </div>
                 </div>
-              ))}
+              )) : (
+                <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(255,255,255,0.3)' }}>
+                  No trends detected in the current period.
+                </div>
+              )}
             </div>
           </div>
 
@@ -360,7 +489,9 @@ export default function Dashboard({ onNavigateToTrend, onNavigateToSLAAlerts }) 
               <AlertCircle size={32} style={{color: '#e11d48'}} />
               <div>
                 <h3 className="section-heading" style={{marginBottom: '4px'}}>SLA Alerts</h3>
-                <p className="section-sub text-fade">Monitor tickets approaching SLA deadline</p>
+                <p className="section-sub text-fade">
+                  {stats?.sla_breaches || 0} breached tickets — Monitor tickets approaching SLA deadline
+                </p>
               </div>
             </div>
             <ArrowRight size={24} style={{color: '#e11d48', minWidth: '24px'}} />
@@ -371,4 +502,3 @@ export default function Dashboard({ onNavigateToTrend, onNavigateToSLAAlerts }) 
     </div>
   );
 }
-
