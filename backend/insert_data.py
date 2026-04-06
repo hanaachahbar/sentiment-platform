@@ -1,80 +1,71 @@
-import random
-from datetime import datetime, timedelta
+import os
+import pandas as pd
+from database import SessionLocal, Ticket, engine, Base
+from datetime import datetime
+from sla import calculate_sla_deadline
 from pathlib import Path
 
-import pandas as pd
+# Clean up existing database first
+BASE_DIR = Path(__file__).resolve().parent
 
-from database import SessionLocal, Ticket, Base, engine
-from ai_service import predict_category, predict_urgency, predict_topic
-from sla import calculate_sla_deadline
-
-# Recreate tables
+# Drop and recreate schema to apply column renames (fb_link -> source_link)
 Base.metadata.drop_all(bind=engine)
 Base.metadata.create_all(bind=engine)
 
-# Load CSV
-BASE_DIR = Path(__file__).resolve().parent
+# Load CSV safely
 csv_path = BASE_DIR / "data" / "comments.csv"
-
 df = pd.read_csv(csv_path, header=None)
+
+# Rename columns
 df.columns = ["platform", "category_raw", "text", "sentiment_raw", "urgent_flag"]
-
-# Realistic author names
-_AUTHORS = [
-    "Youssef B.", "Fatima Z.", "Amine K.", "Sara M.", "Khalid R.",
-    "Nadia L.", "Omar H.", "Leila A.", "Rachid T.", "Imane D.",
-    "Hassan E.", "Khadija N.", "Mehdi S.", "Zineb F.", "Hamza O.",
-    "Aicha G.", "Mouad C.", "Salma W.", "Ayoub J.", "Meryem P.",
-]
-
-
-def _sentiment_from_category(category: str) -> str:
-    if category in ("Complaint", "Escalation"):
-        return "Negative"
-    if category == "Compliment":
-        return "Positive"
-    return "Neutral"
 
 db = SessionLocal()
 
-# Insert CSV rows with varied timestamps
-now = datetime.utcnow()
+# Clear existing data instead of deleting file to avoid PermissionError
+db.query(Ticket).delete()
+db.commit()
+print("🧹 Cleared existing tickets from database.")
 
 for idx, row in df.iterrows():
-    text = str(row["text"])
+    created_at = datetime.utcnow()
 
-    # Spread over the last 7 days for trend testing
-    hours_ago = random.randint(1, 168)  # 1 hour to 7 days
-    created_at = now - timedelta(hours=hours_ago)
-
-    # Run AI inference
-    category = predict_category(text)
-    is_urgent = predict_urgency(category)
-    topic = predict_topic(text)
-
-    sentiment = _sentiment_from_category(category)
-
-    author = random.choice(_AUTHORS)
-    fb_link = f"https://facebook.com/post/{random.randint(100000, 999999)}"
+    # Map sentiment_raw to proper fixed categories: positive, negative, off-topic, suggestion, interrogative
+    sentiment_map = {
+        "positive": "positive",
+        "negative": "negative",
+        "interrogative": "interrogative",
+        "off-topic": "off-topic",
+        "suggestion": "suggestion",
+        "neutral": "negative" # default to negative as requested by user
+    }
+    mapped_category = sentiment_map.get(row["sentiment_raw"].lower(), "negative")
+    
+    # Generate a dummy but valid looking link for source_link
+    source_link = f"https://www.facebook.com/search/posts?q={row['platform']}_{idx}" if row["platform"].lower() == "facebook" else f"https://www.google.com/search?q={row['platform']}_{idx}"
 
     ticket = Ticket(
-        text=text,
-        author=author,
+        text=row["text"],
+        author="unknown",
         platform=row["platform"],
-        fb_link=fb_link,
+        source_link=source_link,
+
         created_at=created_at,
-        category=category,
+
+        category=mapped_category,
         category_manual=None,
         manually_corrected=False,
-        sentiment=sentiment,
-        is_urgent=is_urgent,
-        topic=topic,
+
+        is_urgent=True if row["urgent_flag"] == 1 else False,
+
+        topic="installation issue",
+
         sla_deadline=calculate_sla_deadline(created_at),
-        status="open",
+        status="open"
     )
+
     db.add(ticket)
 
 db.commit()
 db.close()
 
-print(f"Data inserted: {len(df)} CSV rows")
+print("✅ Data inserted successfully with standardized categories and source links")

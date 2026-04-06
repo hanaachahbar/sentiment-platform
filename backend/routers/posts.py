@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from database import SessionLocal, Ticket
 from datetime import datetime
+from sqlalchemy import case, and_
 
 router = APIRouter()
 
@@ -12,48 +13,73 @@ def get_posts(
     is_urgent: bool = None
 ):
     db = SessionLocal()
-    query = db.query(Ticket)
 
-    if platform:
-        query = query.filter(Ticket.platform == platform)
-    if category:
-        query = query.filter(Ticket.category == category)
-    if status:
-        query = query.filter(Ticket.status == status)
-    if is_urgent is not None:
-        query = query.filter(Ticket.is_urgent == is_urgent)
+    try:
+        effective_category = case(
+            (
+                and_(
+                    Ticket.manually_corrected == True,
+                    Ticket.category_manual.isnot(None),
+                    Ticket.category_manual != ""
+                ),
+                Ticket.category_manual
+            ),
+            else_=Ticket.category
+        )
 
-    tickets = query.all()
+        query = db.query(Ticket)
 
-    now = datetime.utcnow()
-    updated = False
-# Check for SLA breaches and update status if needed(can be removed later one)
-    for t in tickets:
-        if t.status == "open" and t.sla_deadline and now > t.sla_deadline:
-            t.status = "breached"
-            updated = True
+        if platform:
+            query = query.filter(Ticket.platform == platform)
 
-    if updated:
-        db.commit()
-#end of this part
-    response = [
-        {
-            "id": t.id,
-            "text": t.text,
-            "author": t.author,
-            "platform": t.platform,
-            "fb_link": t.fb_link,
-            "created_at": t.created_at,
-            "category": t.category,
-            "category_manual": t.category_manual,
-            "manually_corrected": t.manually_corrected,
-            "is_urgent": t.is_urgent,
-            "sla_deadline": t.sla_deadline,
-            "status": t.status,
-            "topic": t.topic
-        }
-        for t in tickets
-    ]
+        if category:
+            query = query.filter(effective_category == category)
 
-    db.close()
-    return response
+        if status:
+            query = query.filter(Ticket.status == status)
+
+        if is_urgent is not None:
+            query = query.filter(Ticket.is_urgent == is_urgent)
+
+        tickets = query.all()
+
+        now = datetime.utcnow()
+        updated = False
+
+        for t in tickets:
+            if t.status == "open" and t.sla_deadline and now > t.sla_deadline:
+                t.status = "breached"
+                updated = True
+
+        if updated:
+            db.commit()
+
+        response = []
+        for t in tickets:
+            final_category = (
+                t.category_manual
+                if t.manually_corrected and t.category_manual
+                else t.category
+            )
+
+            response.append({
+                "id": t.id,
+                "text": t.text,
+                "author": t.author,
+                "platform": t.platform,
+                "source_link": t.source_link,
+                "created_at": t.created_at,
+                "category": final_category,          # final category used by frontend
+                "category_original": t.category,     # optional
+                "category_manual": t.category_manual,
+                "manually_corrected": t.manually_corrected,
+                "is_urgent": t.is_urgent,
+                "sla_deadline": t.sla_deadline,
+                "status": t.status,
+                "topic": t.topic
+            })
+
+        return response
+
+    finally:
+        db.close()

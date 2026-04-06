@@ -1,22 +1,20 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from database import SessionLocal, Ticket
-from datetime import datetime, timedelta
 import csv
 import io
+from datetime import datetime
 from sqlalchemy import case, and_
 
 router = APIRouter()
 
-
 @router.get("/api/export")
-def export_data(request: Request):
-    params = request.query_params
-    from_date = params.get("from") or params.get("from_date")
-    to_date = params.get("to") or params.get("to_date")
-    status = params.get("status")
-    category = params.get("category")
-
+def export_data(
+    from_date: str = None,
+    to_date: str = None,
+    status: str = None,
+    category: str = None
+):
     db = SessionLocal()
 
     try:
@@ -25,14 +23,14 @@ def export_data(request: Request):
                 and_(
                     Ticket.manually_corrected == True,
                     Ticket.category_manual.isnot(None),
-                    Ticket.category_manual != "",
+                    Ticket.category_manual != ""
                 ),
-                Ticket.category_manual,
+                Ticket.category_manual
             ),
-            else_=Ticket.category,
+            else_=Ticket.category
         )
 
-        query = db.query(Ticket, effective_category.label("effective_category"))
+        query = db.query(Ticket)
 
         if status:
             query = query.filter(Ticket.status == status)
@@ -40,21 +38,15 @@ def export_data(request: Request):
         if category:
             query = query.filter(effective_category == category)
 
+        tickets = query.all()
+
         if from_date:
-            try:
-                start = datetime.strptime(from_date, "%Y-%m-%d")
-                query = query.filter(Ticket.created_at >= start)
-            except ValueError:
-                pass
+            start = datetime.fromisoformat(from_date)
+            tickets = [t for t in tickets if t.created_at and t.created_at >= start]
 
         if to_date:
-            try:
-                end = datetime.strptime(to_date, "%Y-%m-%d") + timedelta(days=1)
-                query = query.filter(Ticket.created_at < end)
-            except ValueError:
-                pass
-
-        rows = query.order_by(Ticket.created_at.desc()).all()
+            end = datetime.fromisoformat(to_date)
+            tickets = [t for t in tickets if t.created_at and t.created_at <= end]
 
         output = io.StringIO()
         writer = csv.writer(output)
@@ -62,46 +54,43 @@ def export_data(request: Request):
         writer.writerow([
             "id",
             "text",
-            "author",
-            "platform",
-            "fb_link",
-            "created_at",
             "category",
             "category_original",
             "category_manual",
-            "manually_corrected",
-            "sentiment",
-            "is_urgent",
-            "topic",
-            "sla_deadline",
             "status",
+            "platform",
+            "source_link",
+            "created_at",
+            "topic"
         ])
 
-        for t, final_category in rows:
+        for t in tickets:
+            final_category = (
+                t.category_manual
+                if t.manually_corrected and t.category_manual
+                else t.category
+            )
+
             writer.writerow([
                 t.id,
                 t.text,
-                t.author,
-                t.platform,
-                t.fb_link,
-                t.created_at,
                 final_category,
                 t.category,
                 t.category_manual,
-                t.manually_corrected,
-                t.sentiment,
-                t.is_urgent,
-                t.topic,
-                t.sla_deadline,
                 t.status,
+                t.platform,
+                t.source_link,
+                t.created_at,
+                t.topic
             ])
 
         output.seek(0)
-        filename = f"tickets_export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+
         return StreamingResponse(
             output,
             media_type="text/csv",
-            headers={"Content-Disposition": f"attachment; filename={filename}"},
+            headers={"Content-Disposition": "attachment; filename=tickets_export.csv"}
         )
+
     finally:
         db.close()
