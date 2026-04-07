@@ -16,9 +16,11 @@ class TopicDictionary(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     topic_name = Column(String, unique=True, nullable=False)
-    is_active = Column(Boolean, default=True)
+    is_active = Column(Boolean, default=True, nullable=False)  # FIX: nullable=False, always has a value
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
+ # FIX: Add back-reference so you can do topic.tickets if needed
+    tickets = relationship("Ticket", back_populates="topic_ref")
 
 class Ticket(Base):
     __tablename__ = "tickets"
@@ -34,10 +36,11 @@ class Ticket(Base):
     category_manual = Column(String, nullable=True)
     manually_corrected = Column(Boolean, default=False)
 
-    is_urgent = Column(Boolean)
+    is_urgent = Column(Boolean, default=False)
 
     topic_id = Column(Integer, ForeignKey("topics_dictionary.id"), nullable=True)
-    topic_ref = relationship("TopicDictionary")
+    # FIX: back_populates must match the relationship name on TopicDictionary
+    topic_ref = relationship("TopicDictionary", back_populates="tickets")
 
     sla_deadline = Column(DateTime)
     status = Column(String)

@@ -1,6 +1,6 @@
 # Sentiment Analysis Platform — Backend
 
-A FastAPI backend for managing and analysing customer comments from social media. Comments are stored as tickets, classified by an AI engine (category, sentiment, topic), and exposed through a REST API consumed by the React dashboard.
+A FastAPI backend for managing and analysing customer comments from social media. Comments are stored as tickets, classified by an AI engine (category, topic, urgency), and exposed through a REST API consumed by the React dashboard.
 
 ---
 
@@ -56,14 +56,16 @@ pip install -r requirements.txt
 python insert_data.py
 ```
 
+> This reads `data/comments.csv`, resolves each topic against `topics_dictionary` (creating entries if needed), computes SLA deadlines, and inserts all tickets.
+
 ### 6. Run the server
 
 ```bash
 uvicorn main:app --reload
 ```
 
-The API will be available at `http://127.0.0.1:8000`  
-Interactive docs (Swagger UI): `http://127.0.0.1:8000/docs`
+API available at: `http://127.0.0.1:8000`  
+Swagger docs: `http://127.0.0.1:8000/docs`
 
 ---
 
@@ -73,7 +75,7 @@ Interactive docs (Swagger UI): `http://127.0.0.1:8000/docs`
 backend/
 │
 ├── main.py            # App entry point, registers all routers
-├── database.py        # SQLAlchemy engine, session, Base model
+├── database.py        # SQLAlchemy engine, session, Ticket + TopicDictionary models
 ├── sla.py             # SLA deadline computation
 ├── insert_data.py     # CSV ingestion and database seeding
 │
@@ -93,18 +95,51 @@ backend/
 
 ---
 
+## Database Schema
+
+### `tickets` table
+
+| Field                | Type         | Description                                     |
+| -------------------- | ------------ | ----------------------------------------------- |
+| `id`                 | Integer (PK) | Auto-generated unique identifier                |
+| `text`               | String       | Raw customer comment text                       |
+| `author`             | String       | Name or handle of the comment author            |
+| `platform`           | String       | Source platform (Facebook, Instagram, etc.)     |
+| `source_link`        | String       | Direct URL to the original comment              |
+| `created_at`         | DateTime     | Timestamp of the original comment               |
+| `category`           | String       | AI-predicted ticket category                    |
+| `category_manual`    | String       | Human-corrected category (nullable)             |
+| `manually_corrected` | Boolean      | `true` if a staff member corrected the category |
+| `is_urgent`          | Boolean      | Urgency flag raised by the AI engine            |
+| `topic_id`           | Integer (FK) | Foreign key to `topics_dictionary.id`           |
+| `sla_deadline`       | DateTime     | `created_at + 48 hours`                         |
+| `status`             | String       | `open`, `resolved`, or `breached`               |
+| `fetched_at`         | DateTime     | Timestamp when the record was ingested          |
+
+### `topics_dictionary` table
+
+| Field        | Type         | Description                                                |
+| ------------ | ------------ | ---------------------------------------------------------- |
+| `id`         | Integer (PK) | Primary key                                                |
+| `topic_name` | String       | Unique human-readable topic label                          |
+| `is_active`  | Boolean      | Whether the topic is active (non-nullable, default `True`) |
+| `created_at` | DateTime     | When the topic was created                                 |
+| `updated_at` | DateTime     | When the topic was last modified                           |
+
+---
+
 ## API Endpoints
 
 ### `GET /api/posts`
 
 Returns all tickets with optional filters.
 
-| Parameter   | Description                                      |
-| ----------- | ------------------------------------------------ |
-| `platform`  | Filter by source platform (facebook, instagram…) |
-| `category`  | Filter by category                               |
-| `status`    | `open`, `resolved`, or `breached`                |
-| `is_urgent` | `true` or `false`                                |
+| Parameter   | Description                       |
+| ----------- | --------------------------------- |
+| `platform`  | Filter by source platform         |
+| `category`  | Filter by category                |
+| `status`    | `open`, `resolved`, or `breached` |
+| `is_urgent` | `true` or `false`                 |
 
 > Automatically marks overdue open tickets as `breached` on each call.
 
@@ -126,35 +161,51 @@ Returns dashboard KPIs.
 
 ### `GET /api/trends`
 
-Identifies the most active discussion topics and compares their frequency against a previous period to determine if each topic is rising, falling, or stable.
+Identifies the most active topics and compares their frequency against a previous period.
 
-**Default behaviour:** compares the last 48 hours against the previous 48 hours.
+**Default:** compares last 48 hours vs the 48 hours before that.
 
-| Parameter   | Description            |
-| ----------- | ---------------------- |
-| `from_date` | Start of custom period |
-| `to_date`   | End of custom period   |
+| Parameter   | Description                       |
+| ----------- | --------------------------------- |
+| `from_date` | Start of custom period (optional) |
+| `to_date`   | End of custom period (optional)   |
+
+Each trend object returns:
+
+| Field       | Description                                                    |
+| ----------- | -------------------------------------------------------------- |
+| `topic_id`  | Stable ID from `topics_dictionary`                             |
+| `topic`     | Topic label                                                    |
+| `is_active` | Whether the topic is currently active                          |
+| `count`     | Number of tickets in the current period                        |
+| `direction` | `up`, `down`, or `stable`                                      |
+| `change`    | Textual comparison vs previous period                          |
+| `tickets`   | List of ticket objects (`id`, `text`, `author`, `source_link`) |
+
+> Only active topics (`is_active = true`) appear in results.
 
 **Example response:**
 
 ```json
 {
   "current_period": {
-    "from": "2026-03-27T10:00:00",
-    "to": "2026-03-29T10:00:00"
+    "from": "2026-04-05T10:00:00",
+    "to": "2026-04-07T10:00:00"
   },
   "previous_period": {
-    "from": "2026-03-25T10:00:00",
-    "to": "2026-03-27T10:00:00"
+    "from": "2026-04-03T10:00:00",
+    "to": "2026-04-05T10:00:00"
   },
   "trends": [
     {
-      "topic": "FTTH installation",
-      "count": 23,
+      "topic_id": 1,
+      "topic": "Panne et coupures generales",
+      "is_active": true,
+      "count": 3,
       "direction": "up",
-      "change": "+15 vs previous period",
+      "change": "+2 vs previous period",
       "tickets": [
-        { "id": 42, "text": "...", "author": "...", "fb_link": "..." }
+        { "id": 6, "text": "...", "author": "...", "source_link": "..." }
       ]
     }
   ]
@@ -171,7 +222,7 @@ Manually correct the AI-assigned category of a ticket.
 { "category": "suggestion" }
 ```
 
-- Original AI category is preserved
+- Original AI category is preserved in `category`
 - Correction saved in `category_manual`
 - `manually_corrected` flag set to `true`
 
@@ -179,9 +230,7 @@ Manually correct the AI-assigned category of a ticket.
 
 ### `POST /api/tickets/{id}/resolve`
 
-Mark a ticket as resolved.
-
-- Sets `status = "resolved"`
+Mark a ticket as resolved. Sets `status = "resolved"`.
 
 ---
 
@@ -189,12 +238,12 @@ Mark a ticket as resolved.
 
 Download ticket data as a CSV file.
 
-| Parameter   | Description                    |
-| ----------- | ------------------------------ |
-| `from_date` | Export tickets from this date  |
-| `to_date`   | Export tickets up to this date |
-| `status`    | Filter by status               |
-| `category`  | Filter by category             |
+| Parameter   | Description                               |
+| ----------- | ----------------------------------------- |
+| `from_date` | Export tickets from this date (optional)  |
+| `to_date`   | Export tickets up to this date (optional) |
+| `status`    | Filter by status (optional)               |
+| `category`  | Filter by category (optional)             |
 
 All parameters are optional and can be combined freely.
 
@@ -207,7 +256,7 @@ Comment received
       ↓
 Stored in DB (status = open)
       ↓
-AI classification (category · sentiment · topic)
+AI classification (category · topic_id · is_urgent)
       ↓
 [Optional] Manual correction by staff
       ↓
@@ -220,13 +269,24 @@ If the 48-hour SLA deadline passes without resolution → `status = breached`
 
 ## SLA Management
 
-Each ticket gets an SLA deadline:
-
 ```
 sla_deadline = created_at + 48 hours
 ```
 
-The system automatically checks and updates overdue tickets to `breached` on every call to `GET /api/posts`.
+The system automatically checks and updates overdue open tickets to `breached` on every call to `GET /api/posts`.
+
+---
+
+## Frontend Integration
+
+CORS is enabled via `CORSMiddleware` — the React dashboard can call the API directly from the browser.
+
+**Base URL:** `http://127.0.0.1:8000`
+
+```js
+const res = await fetch("http://127.0.0.1:8000/api/posts?status=open");
+const data = await res.json();
+```
 
 ---
 
@@ -238,34 +298,6 @@ The system automatically checks and updates overdue tickets to `breached` on eve
 | `422`  | Invalid or missing request fields |
 | `400`  | Invalid operation                 |
 
-All errors follow the format:
-
 ```json
 { "detail": "Ticket not found" }
 ```
-
----
-
-## Databas format
-
-| Field                | Type     | Description                                                                                        |
-| -------------------- | -------- | -------------------------------------------------------------------------------------------------- |
-| id                   | Integer  | Auto-generated unique ID for each ticket                                                           |
-| text                 | String   | The full text of the comment                                                                       |
-| author               | String   | Name of the person who commented                                                                   |
-| platform             | String   | Facebook, Instagram, etc.                                                                          |
-| source_link          | String   | Direct URL to the original comment                                                                 |
-| created_at           | DateTime | When the customer posted the comment                                                               |
-| category             | String   | AI-predicted category (Complaint, Suggestion, Compliment, Inquiry, Escalation, Out_of_topic, etc.) |
-| category_manual      | String   | Manual corrected category if changed by staff; null otherwise                                      |
-| manually_corrected   | Boolean  | True if staff changed the AI category                                                              |
-| is_urgent            | Boolean  | True if the ticket needs quick attention                                                           |
-| topic                | String   | Main subject extracted from the comment                                                            |
-| topic_manual         | String   | Manual corrected topic if changed by staff; null otherwise                                         |
-| status               | String   | Current processing state (Open, In Progress, Resolved)                                             |
-| assigned_to          | String   | Staff member assigned to the ticket; null if unassigned                                            |
-| resolved_at          | DateTime | Resolution timestamp; null if unresolved                                                           |
-| notes                | String   | Internal notes added by staff                                                                      |
-| ai_confidence        | Float    | Confidence score of the AI prediction                                                              |
-| created_in_system_at | DateTime | Timestamp when the ticket was stored in the system                                                 |
-| updated_at           | DateTime | Timestamp of the last update                                                                       |

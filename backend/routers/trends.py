@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from datetime import datetime, timedelta
-from database import SessionLocal, Ticket
+from database import SessionLocal, Ticket, TopicDictionary
 
 router = APIRouter()
 
@@ -11,6 +11,7 @@ def get_trends(from_date: str = None, to_date: str = None):
     now = datetime.utcnow()
 
     if not from_date and not to_date:
+        # Default: compare last 48 hours vs the 48 hours before that
         current_end = now
         current_start = now - timedelta(hours=48)
     elif from_date and to_date:
@@ -41,6 +42,12 @@ def get_trends(from_date: str = None, to_date: str = None):
     previous_end = current_start
     previous_start = current_start - duration
 
+    # Load only active topics from TopicDictionary
+    # This gives us: is_active filtering + fast name lookup by topic_id
+    active_topics = db.query(TopicDictionary).filter(TopicDictionary.is_active == True).all()
+    active_topic_ids = {t.id for t in active_topics}
+    topic_name_by_id = {t.id: t.topic_name for t in active_topics}
+
     all_tickets = db.query(Ticket).all()
 
     current_tickets = [
@@ -61,7 +68,14 @@ def get_trends(from_date: str = None, to_date: str = None):
     # Count tickets in current period
     for t in current_tickets:
         topic_id = t.topic_id if t.topic_id is not None else 0
-        topic_name = t.topic_ref.topic_name if t.topic_ref else "Other"
+
+        # Resolve topic name: pre-loaded dict first, ORM fallback, then "Other"
+        if topic_id in topic_name_by_id:
+            topic_name = topic_name_by_id[topic_id]
+        elif t.topic_ref:
+            topic_name = t.topic_ref.topic_name
+        else:
+            topic_name = "Other"
 
         topic_names[topic_id] = topic_name
         current_counts[topic_id] = current_counts.get(topic_id, 0) + 1
@@ -79,7 +93,13 @@ def get_trends(from_date: str = None, to_date: str = None):
     # Count tickets in previous period
     for t in previous_tickets:
         topic_id = t.topic_id if t.topic_id is not None else 0
-        topic_name = t.topic_ref.topic_name if t.topic_ref else "Other"
+
+        if topic_id in topic_name_by_id:
+            topic_name = topic_name_by_id[topic_id]
+        elif t.topic_ref:
+            topic_name = t.topic_ref.topic_name
+        else:
+            topic_name = "Other"
 
         topic_names[topic_id] = topic_name
         previous_counts[topic_id] = previous_counts.get(topic_id, 0) + 1
@@ -87,6 +107,10 @@ def get_trends(from_date: str = None, to_date: str = None):
     trends = []
 
     for topic_id, count in current_counts.items():
+        # Skip inactive topics (but keep topic_id=0 which is the "Other" bucket)
+        if topic_id != 0 and topic_id not in active_topic_ids:
+            continue
+
         previous_count = previous_counts.get(topic_id, 0)
         diff = count - previous_count
 
@@ -100,9 +124,12 @@ def get_trends(from_date: str = None, to_date: str = None):
             direction = "stable"
             change = "0 vs previous period"
 
+        is_active = (topic_id in active_topic_ids) if topic_id != 0 else True
+
         trends.append({
             "topic_id": topic_id,
             "topic": topic_names.get(topic_id, "Other"),
+            "is_active": is_active,
             "count": count,
             "direction": direction,
             "change": change,
