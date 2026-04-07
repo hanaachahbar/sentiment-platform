@@ -14,7 +14,7 @@ def get_stats():
     today_posts = [t for t in tickets if t.created_at and t.created_at.date() == today]
 
     total = len(today_posts)
-    complaints = len([t for t in today_posts if (t.category_manual or t.category) == "Complaint"])
+    complaints = complaints = len([t for t in today_posts if (t.category_manual or t.category) == "negative"])
     breaches = len([t for t in tickets if t.status == "breached"])
 
     response = {

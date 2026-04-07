@@ -81,7 +81,7 @@ def export_data(
                 t.platform,
                 t.source_link,
                 t.created_at,
-                t.topic
+                t.topic_ref.topic_name if t.topic_ref else "Other"
             ])
 
         output.seek(0)
