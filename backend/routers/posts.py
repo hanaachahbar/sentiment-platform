@@ -1,96 +1,79 @@
 from fastapi import APIRouter
-from fastapi.responses import StreamingResponse
 from database import SessionLocal, Ticket
-import csv
-import io
-from datetime import datetime
 from sqlalchemy import case, and_
 
 router = APIRouter()
 
-@router.get("/api/export")
-def export_data(
-    from_date: str = None,
-    to_date: str = None,
+@router.get("/api/posts")
+def get_posts(
+    platform: str = None,
+    category: str = None,
     status: str = None,
-    category: str = None
+    is_urgent: bool = None
 ):
+    """
+    Fetch tickets/posts with optional filters.
+    Returns all fields needed by frontend (Feed, SLAAlerts, etc.)
+    """
     db = SessionLocal()
 
     try:
-        effective_category = case(
-            (
-                and_(
-                    Ticket.manually_corrected == True,
-                    Ticket.category_manual.isnot(None),
-                    Ticket.category_manual != ""
-                ),
-                Ticket.category_manual
-            ),
-            else_=Ticket.category
-        )
-
         query = db.query(Ticket)
 
+        # Apply filters
+        if platform:
+            query = query.filter(Ticket.platform == platform)
+        
         if status:
             query = query.filter(Ticket.status == status)
-
+        
+        if is_urgent is not None:
+            query = query.filter(Ticket.is_urgent == is_urgent)
+        
+        # Category filter uses manual category if it exists, else original
         if category:
+            effective_category = case(
+                (
+                    and_(
+                        Ticket.manually_corrected == True,
+                        Ticket.category_manual.isnot(None),
+                        Ticket.category_manual != ""
+                    ),
+                    Ticket.category_manual
+                ),
+                else_=Ticket.category
+            )
             query = query.filter(effective_category == category)
 
         tickets = query.all()
 
-        if from_date:
-            start = datetime.fromisoformat(from_date)
-            tickets = [t for t in tickets if t.created_at and t.created_at >= start]
-
-        if to_date:
-            end = datetime.fromisoformat(to_date)
-            tickets = [t for t in tickets if t.created_at and t.created_at <= end]
-
-        output = io.StringIO()
-        writer = csv.writer(output)
-
-        writer.writerow([
-            "id",
-            "text",
-            "category",
-            "category_original",
-            "category_manual",
-            "status",
-            "platform",
-            "source_link",
-            "created_at",
-            "topic"
-        ])
-
+        # Build response with all required fields
+        result = []
         for t in tickets:
+            # Use manual category if manually corrected, else original
             final_category = (
                 t.category_manual
                 if t.manually_corrected and t.category_manual
                 else t.category
             )
 
-            writer.writerow([
-                t.id,
-                t.text,
-                final_category,
-                t.category,
-                t.category_manual,
-                t.status,
-                t.platform,
-                t.source_link,
-                t.created_at,
-                t.topic_ref.topic_name if t.topic_ref else "Other"
-            ])
+            result.append({
+                "id": t.id,
+                "author": t.author or "Unknown",
+                "text": t.text,
+                "platform": t.platform,
+                "status": t.status,  # 'open', 'resolved', 'breached'
+                "sla_deadline": t.sla_deadline.isoformat() if t.sla_deadline else None,
+                "category": final_category,  # The effective category to display
+                "category_manual": t.category_manual,  # Manual override if exists
+                "manually_corrected": t.manually_corrected or False,
+                "created_at": t.created_at.isoformat() if t.created_at else None,
+                "source_link": t.source_link,
+                "is_urgent": t.is_urgent or False,
+                "topic": t.topic_ref.topic_name if t.topic_ref else "Other",
+            })
 
-        output.seek(0)
-
-        return StreamingResponse(
-            output,
-            media_type="text/csv",
-            headers={"Content-Disposition": "attachment; filename=tickets_export.csv"}
-        )
+        return result
 
     finally:
         db.close()
