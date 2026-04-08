@@ -2,39 +2,16 @@ import React, { useState } from 'react';
 import { 
   LayoutDashboard, 
   MessageSquare, 
-  TrendingUp,
-  AlertCircle,
+  TrendingUp, 
   Settings
 } from 'lucide-react';
 import './App.css';
 import Dashboard from './pages/Dashboard';
 import Feed from './pages/Feed';
-import Trends from './pages/Trends';
-import SLAAlerts from './pages/SLAAlerts';
 import logoImg from './assets/logo.png';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [selectedTrendId, setSelectedTrendId] = useState(null);
-  const [selectedTicketId, setSelectedTicketId] = useState(null);
-
-  const navigateToTrend = (trendId) => {
-    setSelectedTrendId(trendId);
-    setActiveTab('trends');
-  };
-
-  const navigateToSLAAlerts = () => {
-    setActiveTab('slaAlerts');
-  };
-
-  const navigateToDashboard = () => {
-    setActiveTab('dashboard');
-  };
-
-  const navigateToFeed = (ticketId) => {
-    setSelectedTicketId(ticketId);
-    setActiveTab('feed');
-  };
 
   return (
     <div className="app-container modern-bg">
@@ -59,13 +36,9 @@ function App() {
             <MessageSquare size={20} className="nav-icon" />
             Feed
           </a>
-          <a href="#" className={`nav-item hover-lift ${activeTab === 'trends' ? 'active' : ''}`} onClick={(e) => { e.preventDefault(); setActiveTab('trends'); }}>
+          <a href="#" className="nav-item hover-lift">
             <TrendingUp size={20} className="nav-icon" />
             Trends
-          </a>
-          <a href="#" className={`nav-item hover-lift ${activeTab === 'slaAlerts' ? 'active' : ''}`} onClick={(e) => { e.preventDefault(); setActiveTab('slaAlerts'); }}>
-            <AlertCircle size={20} className="nav-icon" />
-            SLA Alerts
           </a>
           <a href="#" className="nav-item hover-lift">
             <Settings size={20} className="nav-icon" />
@@ -83,15 +56,8 @@ function App() {
 
       {/* Main Content Area */}
       <main className="main-content">
-        {activeTab === 'dashboard' && <Dashboard onNavigateToTrend={navigateToTrend} onNavigateToSLAAlerts={navigateToSLAAlerts} />}
-        {activeTab === 'feed' && <Feed selectedTicketId={selectedTicketId} />}
-        {activeTab === 'trends' && (
-          <Trends 
-            initialTrendId={selectedTrendId} 
-            onClearInitialTrend={() => setSelectedTrendId(null)} 
-          />
-        )}
-        {activeTab === 'slaAlerts' && <SLAAlerts onNavigateToDashboard={navigateToDashboard} onNavigateToFeed={navigateToFeed} />}
+        {activeTab === 'dashboard' && <Dashboard />}
+        {activeTab === 'feed' && <Feed />}
       </main>
     </div>
   );
