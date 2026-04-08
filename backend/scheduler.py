@@ -3,6 +3,7 @@ from datetime import datetime
 
 from database import SessionLocal, Ticket
 from fetcher import fetch_facebook_posts
+from topic_model_service import run_monthly_topic_update
 
 logger = logging.getLogger(__name__)
 
@@ -43,3 +44,15 @@ def run_fetcher():
         fetch_facebook_posts()
     except Exception:
         logger.exception("Scheduled Facebook fetch failed")
+
+
+def run_monthly_model_update():
+    logger.info("Running scheduled monthly topic model update...")
+    try:
+        updated = run_monthly_topic_update()
+        if updated:
+            logger.info("Monthly topic model update completed successfully")
+        else:
+            logger.info("Monthly topic model update skipped or no update was required")
+    except Exception:
+        logger.exception("Scheduled monthly topic model update failed")

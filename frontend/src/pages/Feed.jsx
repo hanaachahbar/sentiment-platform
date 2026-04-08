@@ -4,29 +4,46 @@ import logoImg from '../assets/logo.png';
 import { fetchPosts, updateCategory, resolveTicket, exportTickets } from '../api';
 
 // SLA formatting helper: compute remaining time from sla_deadline
-function formatSLA(slaDeadline) {
+function formatSLA(slaDeadline, status) {
   if (!slaDeadline) return '—';
+
+  if ((status || '').toLowerCase() === 'resolved') {
+    return 'Resolved';
+  }
+
   const now = new Date();
   const deadline = new Date(slaDeadline);
+
+  if (Number.isNaN(deadline.getTime())) {
+    return '—';
+  }
+
   const diffMs = deadline - now;
-  const isNegative = diffMs < 0;
   const absDiff = Math.abs(diffMs);
-  const hours = Math.floor(absDiff / (1000 * 60 * 60));
+
+  const days = Math.floor(absDiff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((absDiff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
   const minutes = Math.floor((absDiff % (1000 * 60 * 60)) / (1000 * 60));
   const seconds = Math.floor((absDiff % (1000 * 60)) / 1000);
-  const hh = String(hours).padStart(2, '0');
-  const mm = String(minutes).padStart(2, '0');
-  const ss = String(seconds).padStart(2, '0');
-  return `${isNegative ? '-' : ''}${hh}:${mm}:${ss}`;
+
+  if (diffMs < 0) {
+    return `Breached by ${days}d ${hours}h ${minutes}m`;
+  }
+
+  if (days > 0) {
+    return `${days}d ${hours}h ${minutes}m left`;
+  }
+
+  return `${hours}h ${minutes}m ${seconds}s left`;
 }
 
 // Capitalize first letter helper
-function capitalize(str) {
+function _capitalize(str) {
   if (!str) return '';
   return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
 }
 
-export default function Feed({ selectedTicketId }) {
+export default function Feed() {
   // API data
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -372,7 +389,7 @@ export default function Feed({ selectedTicketId }) {
                     <span className="badge-urgent"><AlertCircle size={16}/> HIGH URGENCY</span>
                   )}
                   <span className="badge-sla text-fade">
-                    <Clock size={16}/> SLA: <span style={{color: item.status === 'breached' ? '#e11d48' : 'inherit', marginLeft: '6px'}}>{formatSLA(item.sla_deadline)}</span>
+                    <Clock size={16}/> SLA: <span style={{color: item.status === 'breached' ? '#e11d48' : 'inherit', marginLeft: '6px'}}>{formatSLA(item.sla_deadline, item.status)}</span>
                   </span>
                 </div>
               </div>

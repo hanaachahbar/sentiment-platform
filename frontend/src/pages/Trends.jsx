@@ -251,8 +251,8 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
                         <span className="tcf-comment-time">{c.timestamp}</span>
                       </div>
                       <p className="tcf-comment-text">"{c.text}"</p>
-                      {c.fb_link && (
-                        <a href={c.fb_link} target="_blank" rel="noreferrer" className="tcf-reply-link">
+                      {c.source_link && (
+                        <a href={c.source_link} target="_blank" rel="noreferrer" className="tcf-reply-link">
                           <ExternalLink size={12} /> Reply on Facebook
                         </a>
                       )}

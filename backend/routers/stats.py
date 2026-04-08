@@ -14,7 +14,21 @@ def get_stats():
     today_posts = [t for t in tickets if t.created_at and t.created_at.date() == today]
 
     total = len(today_posts)
-    complaints = complaints = len([t for t in today_posts if (t.category_manual or t.category) == "negative"])
+
+    def _is_complaint(value: str | None) -> bool:
+        if not value:
+            return False
+        normalized = value.strip().lower()
+        # Accept both legacy and current category naming.
+        return normalized in {"complaint", "negative"}
+
+    complaints = len(
+        [
+            t
+            for t in today_posts
+            if _is_complaint(t.category_manual or t.category)
+        ]
+    )
     breaches = len([t for t in tickets if t.status == "breached"])
 
     response = {

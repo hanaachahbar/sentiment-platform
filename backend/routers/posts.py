@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+from datetime import datetime
 from database import SessionLocal, Ticket
 from sqlalchemy import case, and_
 
@@ -18,6 +19,23 @@ def get_posts(
     db = SessionLocal()
 
     try:
+        now = datetime.utcnow()
+        overdue_open_tickets = (
+            db.query(Ticket)
+            .filter(Ticket.status == "open")
+            .filter(Ticket.sla_deadline.isnot(None))
+            .all()
+        )
+
+        has_updates = False
+        for ticket in overdue_open_tickets:
+            if now > ticket.sla_deadline:
+                ticket.status = "breached"
+                has_updates = True
+
+        if has_updates:
+            db.commit()
+
         query = db.query(Ticket)
 
         # Apply filters

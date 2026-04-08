@@ -3,15 +3,38 @@ import {
   LayoutDashboard, 
   MessageSquare, 
   TrendingUp, 
+  AlertCircle,
   Settings
 } from 'lucide-react';
 import './App.css';
 import Dashboard from './pages/Dashboard';
 import Feed from './pages/Feed';
+import Trends from './pages/Trends';
+import SLAAlerts from './pages/SLAAlerts';
 import logoImg from './assets/logo.png';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [selectedTrendId, setSelectedTrendId] = useState(null);
+  const [selectedTicketId, setSelectedTicketId] = useState(null);
+
+  const handleNavigateToTrend = (trendId) => {
+    setSelectedTrendId(trendId || null);
+    setActiveTab('trends');
+  };
+
+  const handleClearInitialTrend = () => {
+    setSelectedTrendId(null);
+  };
+
+  const handleNavigateToSLAAlerts = () => {
+    setActiveTab('sla-alerts');
+  };
+
+  const handleNavigateToFeed = (ticketId) => {
+    setSelectedTicketId(ticketId || null);
+    setActiveTab('feed');
+  };
 
   return (
     <div className="app-container modern-bg">
@@ -36,9 +59,13 @@ function App() {
             <MessageSquare size={20} className="nav-icon" />
             Feed
           </a>
-          <a href="#" className="nav-item hover-lift">
+          <a href="#" className={`nav-item hover-lift ${activeTab === 'trends' ? 'active' : ''}`} onClick={(e) => { e.preventDefault(); setActiveTab('trends'); }}>
             <TrendingUp size={20} className="nav-icon" />
             Trends
+          </a>
+          <a href="#" className={`nav-item hover-lift ${activeTab === 'sla-alerts' ? 'active' : ''}`} onClick={(e) => { e.preventDefault(); setActiveTab('sla-alerts'); }}>
+            <AlertCircle size={20} className="nav-icon" />
+            SLA Alerts
           </a>
           <a href="#" className="nav-item hover-lift">
             <Settings size={20} className="nav-icon" />
@@ -56,8 +83,25 @@ function App() {
 
       {/* Main Content Area */}
       <main className="main-content">
-        {activeTab === 'dashboard' && <Dashboard />}
-        {activeTab === 'feed' && <Feed />}
+        {activeTab === 'dashboard' && (
+          <Dashboard
+            onNavigateToTrend={handleNavigateToTrend}
+            onNavigateToSLAAlerts={handleNavigateToSLAAlerts}
+          />
+        )}
+        {activeTab === 'feed' && <Feed selectedTicketId={selectedTicketId} />}
+        {activeTab === 'trends' && (
+          <Trends
+            initialTrendId={selectedTrendId}
+            onClearInitialTrend={handleClearInitialTrend}
+          />
+        )}
+        {activeTab === 'sla-alerts' && (
+          <SLAAlerts
+            onNavigateToDashboard={() => setActiveTab('dashboard')}
+            onNavigateToFeed={handleNavigateToFeed}
+          />
+        )}
       </main>
     </div>
   );

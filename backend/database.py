@@ -1,7 +1,16 @@
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, ForeignKey
-from sqlalchemy.orm import declarative_base, sessionmaker, relationship
+import os
+import platform
 from datetime import datetime
 from pathlib import Path
+
+# Work around Windows Python 3.14 platform WMI hangs during SQLAlchemy import.
+if os.name == "nt":
+    arch = os.environ.get("PROCESSOR_ARCHITECTURE")
+    if arch:
+        platform.machine = lambda: arch
+
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, ForeignKey
+from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
 BASE_DIR = Path(__file__).resolve().parent
 DATABASE_PATH = BASE_DIR / "tickets.db"

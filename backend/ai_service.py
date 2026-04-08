@@ -92,7 +92,7 @@ def predict_category(text: str) -> str:
     if value:
         return _normalize_category(value)
 
-    return "Other"
+    return "Complaint"
 
 
 def predict_topic(text: str) -> str:
@@ -102,7 +102,7 @@ def predict_topic(text: str) -> str:
     if value:
         return value
 
-    return "Other"
+    return "internet outage"
 
 
 def predict_urgency(category: str) -> bool:

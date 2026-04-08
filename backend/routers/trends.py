@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from datetime import datetime, timedelta
+import os
 from database import SessionLocal, Ticket, TopicDictionary
 
 router = APIRouter()
@@ -137,6 +138,36 @@ def get_trends(from_date: str = None, to_date: str = None):
         })
 
     trends.sort(key=lambda x: x["count"], reverse=True)
+
+    top_n_raw = os.getenv("TOP_TRENDS_LIMIT", "8").strip()
+    try:
+        top_n = max(1, int(top_n_raw))
+    except ValueError:
+        top_n = 8
+
+    if len(trends) > top_n:
+        top_trends = trends[:top_n]
+        minor_trends = trends[top_n:]
+
+        minor_count = sum(item["count"] for item in minor_trends)
+        minor_tickets = []
+        for item in minor_trends:
+            minor_tickets.extend(item.get("tickets", []))
+
+        if minor_count > 0:
+            top_trends.append(
+                {
+                    "topic_id": -999,
+                    "topic": "Other Minor Issues",
+                    "is_active": True,
+                    "count": minor_count,
+                    "direction": "stable",
+                    "change": "Grouped minor topics",
+                    "tickets": minor_tickets[:50],
+                }
+            )
+
+        trends = top_trends
 
     response = {
         "current_period": {
