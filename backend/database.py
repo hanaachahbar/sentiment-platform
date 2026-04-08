@@ -37,7 +37,6 @@ class Ticket(Base):
     manually_corrected = Column(Boolean, default=False)
 
     is_urgent = Column(Boolean, default=False)
-    sentiment = Column(String)
 
     topic_id = Column(Integer, ForeignKey("topics_dictionary.id"), nullable=True)
     # FIX: back_populates must match the relationship name on TopicDictionary
