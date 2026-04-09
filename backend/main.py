@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from ai_service import get_predictors_runtime_status
 from routers import posts, stats, tickets, export, trends, topics
 from scheduler import run_fetcher, check_sla_breaches, run_monthly_model_update, configure_fetcher_monitor
 from topic_model_service import preload_topic_model
@@ -54,7 +55,31 @@ scheduler = BackgroundScheduler(timezone="UTC")
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     _load_environment()
-    preload_topic_model()
+
+    predictor_status = get_predictors_runtime_status()
+    logger.warning(
+        "ML models availability at startup: category=%s topic=%s urgency=%s",
+        "YES" if predictor_status["category_available"] else "NO",
+        "YES" if predictor_status["topic_available"] else "NO",
+        "YES" if predictor_status["urgency_available"] else "NO",
+    )
+
+    missing_predictors = predictor_status["missing"]
+    if missing_predictors:
+        logger.warning(
+            "ML predictor check at startup: missing=%s (fallbacks active)",
+            ", ".join(missing_predictors),
+        )
+    else:
+        logger.info("ML predictor check at startup: category/topic/urgency predictors are available")
+
+    topic_model_ready = preload_topic_model()
+    logger.warning(
+        "BERTopic model availability at startup: %s",
+        "YES" if topic_model_ready else "NO",
+    )
+    if not topic_model_ready:
+        logger.warning("Topic model check at startup: BERTopic unavailable, fallback topic predictor is active")
 
     fetch_interval = _env_minutes("FETCH_INTERVAL_MINUTES", 5)
     sla_interval = _env_minutes("SLA_CHECK_INTERVAL_MINUTES", 60)
