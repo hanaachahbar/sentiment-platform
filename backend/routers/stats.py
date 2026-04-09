@@ -1,13 +1,14 @@
 from fastapi import APIRouter
-from datetime import datetime
 from database import SessionLocal, Ticket
+from scheduler import get_fetcher_status
+from time_utils import now_local
 
 router = APIRouter()
 
 @router.get("/api/stats")
 def get_stats():
     db = SessionLocal()
-    today = datetime.utcnow().date()
+    today = now_local().date()
 
     tickets = db.query(Ticket).all()
 
@@ -39,3 +40,8 @@ def get_stats():
 
     db.close()
     return response
+
+
+@router.get("/api/fetcher/status")
+def get_fetcher_monitor_status():
+    return get_fetcher_status()

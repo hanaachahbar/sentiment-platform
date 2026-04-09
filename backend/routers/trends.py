@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from datetime import datetime, timedelta
 import os
 from database import SessionLocal, Ticket, TopicDictionary
+from time_utils import now_local
 
 router = APIRouter()
 
@@ -9,7 +10,7 @@ router = APIRouter()
 def get_trends(from_date: str = None, to_date: str = None):
     db = SessionLocal()
 
-    now = datetime.utcnow()
+    now = now_local()
 
     if not from_date and not to_date:
         # Default: compare last 48 hours vs the 48 hours before that

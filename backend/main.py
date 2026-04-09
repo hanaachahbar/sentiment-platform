@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from routers import posts, stats, tickets, export, trends, topics
-from scheduler import run_fetcher, check_sla_breaches, run_monthly_model_update
+from scheduler import run_fetcher, check_sla_breaches, run_monthly_model_update, configure_fetcher_monitor
 from topic_model_service import preload_topic_model
 
 logger = logging.getLogger(__name__)
@@ -62,6 +62,8 @@ async def lifespan(_: FastAPI):
     monthly_day = os.getenv("MONTHLY_UPDATE_DAY", "last").strip() or "last"
     monthly_hour = _env_int_range("MONTHLY_UPDATE_HOUR_UTC", 23, 0, 23)
     monthly_minute = _env_int_range("MONTHLY_UPDATE_MINUTE_UTC", 55, 0, 59)
+
+    configure_fetcher_monitor(fetch_interval)
 
     scheduler.add_job(
         run_fetcher,

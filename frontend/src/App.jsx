@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   LayoutDashboard, 
   MessageSquare, 
@@ -12,11 +12,37 @@ import Feed from './pages/Feed';
 import Trends from './pages/Trends';
 import SLAAlerts from './pages/SLAAlerts';
 import logoImg from './assets/logo.png';
+import { fetchFetcherStatus } from './api';
+
+function formatCountdown(nextRunAt, nowMs) {
+  if (!nextRunAt) return '--:--';
+
+  const runAtMs = new Date(nextRunAt).getTime();
+  if (Number.isNaN(runAtMs)) return '--:--';
+
+  const remainingSeconds = Math.max(0, Math.floor((runAtMs - nowMs) / 1000));
+  const minutes = String(Math.floor(remainingSeconds / 60)).padStart(2, '0');
+  const seconds = String(remainingSeconds % 60).padStart(2, '0');
+
+  return `${minutes}:${seconds}`;
+}
+
+function formatTimestamp(value) {
+  if (!value) return 'Never';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Unknown';
+
+  return date.toLocaleString();
+}
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [selectedTrendId, setSelectedTrendId] = useState(null);
   const [selectedTicketId, setSelectedTicketId] = useState(null);
+  const [fetcherStatus, setFetcherStatus] = useState(null);
+  const [fetcherStatusError, setFetcherStatusError] = useState('');
+  const [countdownNowMs, setCountdownNowMs] = useState(Date.now());
 
   const handleNavigateToTrend = (trendId) => {
     setSelectedTrendId(trendId || null);
@@ -35,6 +61,44 @@ function App() {
     setSelectedTicketId(ticketId || null);
     setActiveTab('feed');
   };
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCountdownNowMs(Date.now());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadFetcherStatus = async () => {
+      try {
+        const data = await fetchFetcherStatus();
+        if (!isMounted) return;
+
+        setFetcherStatus(data);
+        setFetcherStatusError('');
+      } catch (error) {
+        if (!isMounted) return;
+        setFetcherStatusError(error.message || 'Fetcher monitor unavailable');
+      }
+    };
+
+    loadFetcherStatus();
+    const poll = setInterval(loadFetcherStatus, 5000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(poll);
+    };
+  }, []);
+
+  const fetcherState = fetcherStatus?.status || 'idle';
+  const countdown = formatCountdown(fetcherStatus?.next_run_at, countdownNowMs);
+  const lastSuccess = formatTimestamp(fetcherStatus?.last_success_at);
+  const lastInsertedCount = fetcherStatus?.last_inserted_count ?? 0;
 
   return (
     <div className="app-container modern-bg">
@@ -71,6 +135,34 @@ function App() {
             <Settings size={20} className="nav-icon" />
             Settings
           </a>
+
+          <div className="fetcher-monitor-card">
+            <div className="fetcher-monitor-header">
+              <span className="fetcher-monitor-title">Fetcher Monitor</span>
+              <span className={`fetcher-status-pill ${fetcherState}`}>{fetcherState}</span>
+            </div>
+
+            <div className="fetcher-countdown">{countdown}</div>
+            <div className="fetcher-countdown-label">Next scheduled run</div>
+
+            <div className="fetcher-meta-row">
+              <span>Last success</span>
+              <strong>{lastSuccess}</strong>
+            </div>
+
+            <div className="fetcher-meta-row">
+              <span>Last inserted</span>
+              <strong>{lastInsertedCount}</strong>
+            </div>
+
+            {fetcherStatusError && (
+              <div className="fetcher-error-text">{fetcherStatusError}</div>
+            )}
+
+            {!fetcherStatusError && fetcherStatus?.last_error && fetcherState === 'failed' && (
+              <div className="fetcher-error-text">{fetcherStatus.last_error}</div>
+            )}
+          </div>
         </nav>
 
         <div className="analysis-capacity">

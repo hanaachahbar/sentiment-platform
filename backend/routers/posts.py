@@ -1,7 +1,7 @@
 from fastapi import APIRouter
-from datetime import datetime
 from database import SessionLocal, Ticket
 from sqlalchemy import case, and_
+from time_utils import now_local
 
 router = APIRouter()
 
@@ -19,7 +19,7 @@ def get_posts(
     db = SessionLocal()
 
     try:
-        now = datetime.utcnow()
+        now = now_local()
         overdue_open_tickets = (
             db.query(Ticket)
             .filter(Ticket.status == "open")

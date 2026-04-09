@@ -1,7 +1,8 @@
 import pandas as pd
 from database import SessionLocal, Ticket, TopicDictionary, engine, Base
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import timedelta
+from time_utils import now_local
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -29,7 +30,7 @@ db.commit()
 # Some in last 48h, some before, so trends and breached statuses can be tested
 hour_offsets = [2, 5, 8, 12, 18, 24, 30, 36, 50, 60, 72, 84, 96, 120, 144, 168]
 
-now = datetime.utcnow()
+now = now_local()
 
 for idx, (_, row) in enumerate(df.iterrows()):
     topic_name = str(row["topic"]).strip() if pd.notna(row["topic"]) and str(row["topic"]).strip() != "" else "Other"

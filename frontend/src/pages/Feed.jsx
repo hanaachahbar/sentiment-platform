@@ -44,6 +44,8 @@ function _capitalize(str) {
 }
 
 export default function Feed() {
+  const PAGE_SIZE = 4;
+
   // API data
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -68,7 +70,7 @@ export default function Feed() {
   const [customEndStr, setCustomEndStr] = useState('');
 
   // Pagination State
-  const [visibleCount, setVisibleCount] = useState(4);
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Export Modal State
   const [isExportModalOpen, setExportModalOpen] = useState(false);
@@ -201,7 +203,19 @@ export default function Feed() {
     return true;
   });
 
-  const displayedItems = filteredItems.slice(0, visibleCount);
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const displayedItems = filteredItems.slice(pageStart, pageStart + PAGE_SIZE);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterCat, filterUrg, filterStatus, timeRange.start, timeRange.end]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const getCategoryColor = (cat) => {
     if (!cat) return 'var(--text-secondary)';
@@ -450,23 +464,40 @@ export default function Feed() {
           )}
         </div>
 
-        {/* Pagination & Load More */}
-        {filteredItems.length > visibleCount && (
+        {/* Pagination */}
+        {totalPages > 1 && (
           <div className="pagination-wrapper mt-8 stun-item" style={{animationDelay: '0.2s'}}>
             <div className="pagination-controls glass-panel">
-              <button className="page-btn page-arrow"><ArrowLeft size={18} /></button>
-              <button className="page-btn active">1</button>
-              <button className="page-btn">2</button>
-              <span className="page-dots text-fade">...</span>
-              <button className="page-btn page-arrow"><ArrowRight size={18} /></button>
+              <button
+                className="page-btn page-arrow"
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+              >
+                <ArrowLeft size={18} />
+              </button>
+
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                <button
+                  key={page}
+                  className={`page-btn ${currentPage === page ? 'active' : ''}`}
+                  onClick={() => setCurrentPage(page)}
+                >
+                  {page}
+                </button>
+              ))}
+
+              <button
+                className="page-btn page-arrow"
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+              >
+                <ArrowRight size={18} />
+              </button>
             </div>
-            
-            <button 
-              className="load-more-full-btn hover-lift-shadow font-lg"
-              onClick={() => setVisibleCount(prev => prev + 4)}
-            >
-              Show More Comments
-            </button>
+
+            <span className="text-fade" style={{fontSize: '14px', fontWeight: 600}}>
+              Page {currentPage} of {totalPages}
+            </span>
           </div>
         )}
 

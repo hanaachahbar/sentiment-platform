@@ -1,7 +1,7 @@
 import os
 import platform
-from datetime import datetime
 from pathlib import Path
+from time_utils import now_local
 
 # Work around Windows Python 3.14 platform WMI hangs during SQLAlchemy import.
 if os.name == "nt":
@@ -26,8 +26,8 @@ class TopicDictionary(Base):
     id = Column(Integer, primary_key=True, index=True)
     topic_name = Column(String, unique=True, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)  # FIX: nullable=False, always has a value
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_local)
+    updated_at = Column(DateTime, default=now_local)
  # FIX: Add back-reference so you can do topic.tickets if needed
     tickets = relationship("Ticket", back_populates="topic_ref")
 
@@ -54,6 +54,6 @@ class Ticket(Base):
     sla_deadline = Column(DateTime)
     status = Column(String)
 
-    fetched_at = Column(DateTime, default=datetime.utcnow)
+    fetched_at = Column(DateTime, default=now_local)
 
 Base.metadata.create_all(bind=engine)

@@ -6,6 +6,7 @@ from typing import Callable, Optional
 
 _CATEGORY_PREDICTOR: Optional[Callable[[str], str]] = None
 _TOPIC_PREDICTOR: Optional[Callable[[str], str]] = None
+_URGENT_PREDICTOR: Optional[Callable[[str], object]] = None
 _PREDICTORS_LOADED = False
 
 
@@ -37,7 +38,7 @@ def _resolve_predictor(module: Optional[ModuleType], candidates: list[str]) -> O
 
 
 def _load_predictors_once() -> None:
-    global _PREDICTORS_LOADED, _CATEGORY_PREDICTOR, _TOPIC_PREDICTOR
+    global _PREDICTORS_LOADED, _CATEGORY_PREDICTOR, _TOPIC_PREDICTOR, _URGENT_PREDICTOR
 
     if _PREDICTORS_LOADED:
         return
@@ -52,6 +53,7 @@ def _load_predictors_once() -> None:
 
     classifier_module = _load_module("ml_classifier_runtime", ml_src / "classifier.py")
     topic_module = _load_module("ml_topic_runtime", ml_src / "topic.py")
+    sentiment_module = _load_module("ml_sentiment_runtime", ml_src / "sentiment.py")
 
     _CATEGORY_PREDICTOR = _resolve_predictor(
         classifier_module,
@@ -60,6 +62,10 @@ def _load_predictors_once() -> None:
     _TOPIC_PREDICTOR = _resolve_predictor(
         topic_module,
         ["predict_topic", "predict_topic_label", "classify_topic", "infer_topic"],
+    )
+    _URGENT_PREDICTOR = _resolve_predictor(
+        sentiment_module,
+        ["predict_urgency", "predict_ticket_urgency", "classify_urgency", "infer_urgency"],
     )
 
 
@@ -85,6 +91,47 @@ def _normalize_category(category: str) -> str:
     return mapping.get(category, category)
 
 
+def _coerce_urgency(value: object) -> Optional[bool]:
+    if isinstance(value, bool):
+        return value
+
+    if isinstance(value, (int, float)):
+        return bool(value)
+
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+
+        truthy = {
+            "true",
+            "urgent",
+            "yes",
+            "high",
+            "1",
+            "escalation",
+            "complaint",
+        }
+        falsy = {
+            "false",
+            "not urgent",
+            "normal",
+            "low",
+            "no",
+            "0",
+            "neutral",
+            "other",
+            "compliment",
+            "inquiry",
+            "question",
+        }
+
+        if normalized in truthy:
+            return True
+        if normalized in falsy:
+            return False
+
+    return None
+
+
 def predict_category(text: str) -> str:
     _load_predictors_once()
 
@@ -105,6 +152,17 @@ def predict_topic(text: str) -> str:
     return "internet outage"
 
 
-def predict_urgency(category: str) -> bool:
+def predict_urgency(category: str, text: str = "") -> bool:
+    _load_predictors_once()
+
+    if _URGENT_PREDICTOR is not None and text:
+        try:
+            value = _URGENT_PREDICTOR(text)
+            parsed = _coerce_urgency(value)
+            if parsed is not None:
+                return parsed
+        except Exception:
+            pass
+
     normalized = _normalize_category(category)
     return normalized in ("Complaint", "Escalation")
