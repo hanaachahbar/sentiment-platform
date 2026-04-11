@@ -11,6 +11,52 @@ _TOPIC_MODEL = None
 _TOPIC_MODEL_LOADED = False
 _BERTOPIC_CLASS = None
 _BERTOPIC_CHECKED = False
+_STRICT_TRUE_VALUES = {"1", "true", "yes", "on"}
+_LAST_TOPIC_SOURCE = "unknown"
+_TOPIC_RUNTIME_ERROR_KEYS: set[str] = set()
+_TOPIC_MODEL_DISABLED_REASON: Optional[str] = None
+
+
+def _strict_mode_enabled() -> bool:
+    return os.getenv("ML_STRICT_MODE", "false").strip().lower() in _STRICT_TRUE_VALUES
+
+
+def _raise_if_strict(reason: str) -> None:
+    if _strict_mode_enabled():
+        raise RuntimeError(f"ML_STRICT_MODE blocked topic fallback: {reason}")
+
+
+def _log_exception_once(key: str, message: str, *args) -> None:
+    if key in _TOPIC_RUNTIME_ERROR_KEYS:
+        return
+
+    _TOPIC_RUNTIME_ERROR_KEYS.add(key)
+    logger.exception(message, *args)
+
+
+def _disable_topic_model_for_inference(reason: str) -> None:
+    global _TOPIC_MODEL, _TOPIC_MODEL_DISABLED_REASON
+
+    if _TOPIC_MODEL_DISABLED_REASON == reason:
+        return
+
+    _TOPIC_MODEL_DISABLED_REASON = reason
+    _TOPIC_MODEL = None
+    logger.warning("BERTopic inference disabled: %s. Falling back to ml/src/topic.py.", reason)
+
+
+def _log_topic_source(source: str, reason: str = "") -> None:
+    global _LAST_TOPIC_SOURCE
+
+    if _LAST_TOPIC_SOURCE == source:
+        return
+
+    _LAST_TOPIC_SOURCE = source
+
+    if reason:
+        logger.warning("Topic prediction source=%s (%s)", source, reason)
+    else:
+        logger.warning("Topic prediction source=%s", source)
 
 
 def _project_root() -> Path:
@@ -123,12 +169,13 @@ def _topic_label_from_model(topic_model, topic_id: int) -> str:
 
 
 def preload_topic_model() -> bool:
-    global _TOPIC_MODEL, _TOPIC_MODEL_LOADED
+    global _TOPIC_MODEL, _TOPIC_MODEL_LOADED, _TOPIC_MODEL_DISABLED_REASON
 
     if _TOPIC_MODEL_LOADED:
         return _TOPIC_MODEL is not None
 
     _TOPIC_MODEL_LOADED = True
+    _TOPIC_MODEL_DISABLED_REASON = None
 
     model_dir = get_topic_model_directory()
     if model_dir is None:
@@ -141,6 +188,10 @@ def preload_topic_model() -> bool:
             return False
 
         _TOPIC_MODEL = BERTopic.load(str(model_dir))
+        if getattr(_TOPIC_MODEL, "embedding_model", None) is None:
+            _disable_topic_model_for_inference("embedding model is not configured in saved BERTopic artifact")
+            return False
+
         logger.info("BERTopic model loaded from %s", model_dir)
         return True
     except Exception:
@@ -155,30 +206,64 @@ def _fallback_predict_topic(text: str) -> str:
     predict_fn = _resolve_function(topic_module, "predict_topic")
 
     if predict_fn is None:
+        _log_topic_source("fallback", "ml/src/topic.py predictor unavailable")
+        _raise_if_strict("ml/src/topic.py predictor is unavailable")
         return "internet outage"
 
     try:
         value = predict_fn(text)
-    except Exception:
+    except Exception as exc:
+        _log_topic_source("fallback", "ml/src/topic.py runtime error")
+        if _strict_mode_enabled():
+            raise RuntimeError("ML_STRICT_MODE blocked topic fallback: ml/src/topic.py runtime error") from exc
         return "internet outage"
 
-    return value.strip() if isinstance(value, str) and value.strip() else "internet outage"
+    if isinstance(value, str) and value.strip():
+        _log_topic_source("fallback", "ml/src/topic.py predictor")
+        return value.strip()
+
+    _log_topic_source("fallback", "ml/src/topic.py empty value")
+    _raise_if_strict("ml/src/topic.py returned empty value")
+    return "internet outage"
 
 
 def predict_topic(text: str) -> Tuple[Optional[int], str]:
     normalized_text = (text or "").strip()
     if not normalized_text:
+        _raise_if_strict("empty text input")
         return None, "internet outage"
+
+    if _TOPIC_MODEL_DISABLED_REASON is not None:
+        _log_topic_source("fallback", _TOPIC_MODEL_DISABLED_REASON)
+        _raise_if_strict(_TOPIC_MODEL_DISABLED_REASON)
+        return None, _fallback_predict_topic(normalized_text)
 
     if preload_topic_model() and _TOPIC_MODEL is not None:
         try:
             topics, _ = _TOPIC_MODEL.transform([normalized_text])
             topic_id = int(topics[0])
             topic_name = _topic_label_from_model(_TOPIC_MODEL, topic_id)
+            _log_topic_source("bertopic")
             return topic_id, topic_name
-        except Exception:
-            logger.exception("BERTopic transform failed, using fallback topic predictor")
+        except Exception as exc:
+            message = str(exc)
+            if "No embedding model was found to embed the documents" in message:
+                _disable_topic_model_for_inference("BERTopic transform cannot run without an embedding model")
+                _log_topic_source("fallback", "BERTopic transform cannot run without embedding model")
+                _raise_if_strict("BERTopic transform cannot run without embedding model")
+                return None, _fallback_predict_topic(normalized_text)
 
+            _log_topic_source("fallback", "BERTopic transform failed")
+            if _strict_mode_enabled():
+                raise RuntimeError("ML_STRICT_MODE blocked topic fallback: BERTopic transform failed") from exc
+
+            _log_exception_once(
+                "bertopic_transform_runtime",
+                "BERTopic transform failed, using fallback topic predictor",
+            )
+
+    _log_topic_source("fallback", "BERTopic model unavailable or not loaded")
+    _raise_if_strict("BERTopic model unavailable or not loaded")
     return None, _fallback_predict_topic(normalized_text)
 
 

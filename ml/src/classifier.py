@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -23,13 +24,18 @@ _INDEX_TO_RAW_LABEL = {
 	4: "suggestion",
 }
 
-_RAW_TO_BACKEND_CATEGORY = {
-	"interrogative": "Inquiry",
-	"negative": "Complaint",
-	"off-topic": "Other",
-	"positive": "Compliment",
-	"suggestion": "Suggestion",
-}
+_DEFAULT_CATEGORY = "negative"
+_STRICT_TRUE_VALUES = {"1", "true", "yes", "on"}
+
+
+def _strict_mode_enabled() -> bool:
+	return os.getenv("ML_STRICT_MODE", "false").strip().lower() in _STRICT_TRUE_VALUES
+
+
+def _fallback_default(reason: str) -> str:
+	if _strict_mode_enabled():
+		raise RuntimeError(f"ML_STRICT_MODE blocked classifier fallback: {reason}")
+	return _DEFAULT_CATEGORY
 
 
 def _load_model_once() -> None:
@@ -47,14 +53,16 @@ def _load_model_once() -> None:
 
 
 def _decode_index(pred_idx: int) -> str:
-	raw = _INDEX_TO_RAW_LABEL.get(pred_idx, f"LABEL_{pred_idx}")
-	return _RAW_TO_BACKEND_CATEGORY.get(raw, raw)
+	label = _INDEX_TO_RAW_LABEL.get(pred_idx)
+	if label is None:
+		return _fallback_default(f"unknown predicted label index {pred_idx}")
+	return label
 
 
 def predict_category(text: Optional[str]) -> str:
 	normalized_text = (text or "").strip()
 	if not normalized_text:
-		return "Complaint"
+		return _fallback_default("empty input text")
 
 	try:
 		_load_model_once()
@@ -71,6 +79,6 @@ def predict_category(text: Optional[str]) -> str:
 
 		pred_idx = int(torch.argmax(logits, dim=-1).item())
 		return _decode_index(pred_idx)
-	except Exception:
-		return "Complaint"
+	except Exception as exc:
+		return _fallback_default(f"inference runtime error: {exc}")
 

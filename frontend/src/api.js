@@ -1,6 +1,7 @@
 // Centralized API service — all backend calls go through here.
 // In dev, Vite proxy forwards /api/* → http://127.0.0.1:8000
 const API_BASE = "";  // empty string because Vite proxy handles /api prefix
+const DIRECT_BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000";
 
 // ────────────────────────────────────────────
 // GET /api/posts  —  list tickets with filters
@@ -30,9 +31,26 @@ export async function fetchStats() {
 // GET /api/fetcher/status  —  scheduler/fetcher monitor state
 // ────────────────────────────────────────────
 export async function fetchFetcherStatus() {
-  const res = await fetch(`${API_BASE}/api/fetcher/status`);
-  if (!res.ok) throw new Error(`Failed to fetch fetcher status: ${res.status}`);
-  return res.json();
+  const path = "/api/fetcher/status";
+
+  try {
+    const proxiedRes = await fetch(`${API_BASE}${path}`);
+    if (proxiedRes.ok) return proxiedRes.json();
+
+    // In Vite dev mode, a backend-reachability issue often appears as proxy 502.
+    if (proxiedRes.status !== 502) {
+      throw new Error(`Failed to fetch fetcher status: ${proxiedRes.status}`);
+    }
+  } catch (error) {
+    // Fall through to direct backend call below.
+    if (error?.message && !error.message.includes('Failed to fetch')) {
+      // no-op: keep the original context and attempt direct URL.
+    }
+  }
+
+  const directRes = await fetch(`${DIRECT_BACKEND_BASE}${path}`);
+  if (!directRes.ok) throw new Error(`Failed to fetch fetcher status: ${directRes.status}`);
+  return directRes.json();
 }
 
 // ────────────────────────────────────────────

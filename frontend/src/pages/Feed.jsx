@@ -43,6 +43,18 @@ function _capitalize(str) {
   return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
 }
 
+function _normalizeCategoryValue(value) {
+  return (value || '').toString().trim();
+}
+
+function _getEffectiveCategory(item) {
+  const primary = _normalizeCategoryValue(item?.category);
+  if (primary) return primary;
+
+  const manual = _normalizeCategoryValue(item?.category_manual);
+  return manual;
+}
+
 export default function Feed() {
   const PAGE_SIZE = 4;
 
@@ -107,8 +119,22 @@ export default function Feed() {
       const data = await fetchPosts(params);
       setItems(data);
 
-      const fixedCategories = ['All', 'positive', 'negative', 'off-topic', 'suggestion', 'interrogative'];
-      setAvailableCategories(fixedCategories);
+      const categoryMap = new Map();
+      (data || []).forEach((item) => {
+        const category = _getEffectiveCategory(item);
+        if (!category) return;
+
+        const key = category.toLowerCase();
+        if (!categoryMap.has(key)) {
+          categoryMap.set(key, category);
+        }
+      });
+
+      const dynamicCategories = Array.from(categoryMap.values()).sort((a, b) =>
+        a.localeCompare(b, undefined, { sensitivity: 'base' })
+      );
+
+      setAvailableCategories(['All', ...dynamicCategories]);
     } catch (err) {
       console.error('Feed load error:', err);
       setError(err.message);
@@ -120,6 +146,16 @@ export default function Feed() {
   useEffect(() => {
     loadPosts();
   }, [loadPosts]);
+
+  useEffect(() => {
+    const hasCurrentCategory = availableCategories.some(
+      (category) => category.toLowerCase() === filterCat.toLowerCase()
+    );
+
+    if (filterCat !== 'All' && !hasCurrentCategory) {
+      setFilterCat('All');
+    }
+  }, [availableCategories, filterCat]);
 
   // Formatting helpers
   const formatDisplayTime = (isoString) => {
@@ -191,7 +227,13 @@ export default function Feed() {
 
   // Filter Computation
   const filteredItems = items.filter(item => {
-    if (filterCat !== 'All' && item.category !== filterCat) return false;
+    const itemCategory = _getEffectiveCategory(item);
+    if (
+      filterCat !== 'All' &&
+      itemCategory.toLowerCase() !== filterCat.toLowerCase()
+    ) {
+      return false;
+    }
     
     // Time Filtering (client-side on created_at)
     if (timeRange.start || timeRange.end) {
@@ -384,12 +426,20 @@ export default function Feed() {
         {/* Feed List */}
         <div className="feed-list mt-8">
           {displayedItems.map((item, index) => (
+            (() => {
+              const effectiveCategory = _getEffectiveCategory(item);
+              const baseOptions = availableCategories.filter(c => c !== 'All');
+              const categoryOptions = effectiveCategory && !baseOptions.includes(effectiveCategory)
+                ? [effectiveCategory, ...baseOptions]
+                : baseOptions;
+
+              return (
             <div 
               key={item.id} 
               className={`card glass-panel hover-lift-shadow stun-item  ${item.is_urgent ? 'urgent-layer' : ''}`}
               style={{
                 animationDelay: `${0.1 + ((index % 4) * 0.1)}s`, 
-                borderLeft: `6px solid ${getCategoryColor(item.category)}`
+                borderLeft: `6px solid ${getCategoryColor(effectiveCategory)}`
               }}
             >
               <div className="feed-card-header">
@@ -417,10 +467,10 @@ export default function Feed() {
                   <span className="control-label text-fade">CATEGORY:</span>
                   <select 
                     className="micro-select larger-font"
-                    value={item.category || ''}
+                    value={effectiveCategory || ''}
                     onChange={(e) => handleCategoryChange(item.id, e.target.value)}
                   >
-                    {availableCategories.filter(c => c !== 'All').map(c => (
+                    {categoryOptions.map(c => (
                       <option key={c} value={c}>{c}</option>
                     ))}
                   </select>
@@ -455,6 +505,8 @@ export default function Feed() {
                 )}
               </div>
             </div>
+              );
+            })()
           ))}
 
           {filteredItems.length === 0 && !loading && (

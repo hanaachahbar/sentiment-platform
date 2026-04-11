@@ -12,6 +12,21 @@ _TOPIC_PREDICTOR: Optional[Callable[[str], str]] = None
 _URGENT_PREDICTOR: Optional[Callable[[str], object]] = None
 _PREDICTORS_LOADED = False
 _RUNTIME_ERROR_KEYS: set[str] = set()
+_STRICT_TRUE_VALUES = {"1", "true", "yes", "on"}
+_LAST_PREDICTION_PATH = {
+    "category": "unknown",
+    "topic": "unknown",
+    "urgency": "unknown",
+}
+
+
+def _strict_mode_enabled() -> bool:
+    return os.getenv("ML_STRICT_MODE", "false").strip().lower() in _STRICT_TRUE_VALUES
+
+
+def _raise_if_strict(component: str, reason: str) -> None:
+    if _strict_mode_enabled():
+        raise RuntimeError(f"ML_STRICT_MODE blocked fallback for {component}: {reason}")
 
 
 def _log_exception_once(key: str, message: str, *args) -> None:
@@ -20,6 +35,19 @@ def _log_exception_once(key: str, message: str, *args) -> None:
 
     _RUNTIME_ERROR_KEYS.add(key)
     logger.exception(message, *args)
+
+
+def _log_prediction_path(component: str, path: str, reason: str = "") -> None:
+    previous = _LAST_PREDICTION_PATH.get(component)
+    _LAST_PREDICTION_PATH[component] = path
+
+    if previous == path:
+        return
+
+    if reason:
+        logger.warning("Prediction path %s=%s (%s)", component, path, reason)
+    else:
+        logger.warning("Prediction path %s=%s", component, path)
 
 
 def _load_module(module_name: str, file_path: Path) -> Optional[ModuleType]:
@@ -84,7 +112,7 @@ def _load_predictors_once() -> None:
     )
 
     if _CATEGORY_PREDICTOR is None:
-        logger.warning("Category predictor unavailable; fallback category='Complaint' will be used.")
+        logger.warning("Category predictor unavailable; fallback category='negative' will be used.")
     if _TOPIC_PREDICTOR is None:
         logger.warning("Topic predictor unavailable; fallback topic='internet outage' will be used.")
     if _URGENT_PREDICTOR is None:
@@ -112,11 +140,24 @@ def _run_predictor(predictor: Optional[Callable[[str], str]], text: str) -> Opti
 
 
 def _normalize_category(category: str) -> str:
+    normalized = (category or "").strip()
+    if not normalized:
+        return "negative"
+
     mapping = {
-        "Information Request": "Inquiry",
-        "Service Request": "Request",
+        "complaint": "negative",
+        "compliment": "positive",
+        "inquiry": "interrogative",
+        "information request": "interrogative",
+        "service request": "interrogative",
+        "request": "interrogative",
+        "question": "interrogative",
+        "escalation": "negative",
+        "out_of_topic": "off-topic",
     }
-    return mapping.get(category, category)
+
+    lowered = normalized.lower()
+    return mapping.get(lowered, lowered)
 
 
 def _coerce_urgency(value: object) -> Optional[bool]:
@@ -137,6 +178,7 @@ def _coerce_urgency(value: object) -> Optional[bool]:
             "1",
             "escalation",
             "complaint",
+            "negative",
         }
         falsy = {
             "false",
@@ -148,8 +190,14 @@ def _coerce_urgency(value: object) -> Optional[bool]:
             "neutral",
             "other",
             "compliment",
+            "positive",
             "inquiry",
             "question",
+            "interrogative",
+            "off-topic",
+            "out_of_topic",
+            "suggestion",
+            "neutral",
         }
 
         if normalized in truthy:
@@ -179,11 +227,13 @@ def get_predictors_runtime_status() -> dict[str, object]:
 
     return {
         "ml_predictors_enabled": enabled,
+        "strict_mode": _strict_mode_enabled(),
         "category_available": category_available,
         "topic_available": topic_available,
         "urgency_available": urgency_available,
         "all_available": enabled and not missing,
         "missing": missing,
+        "prediction_path_last": dict(_LAST_PREDICTION_PATH),
     }
 
 
@@ -192,9 +242,13 @@ def predict_category(text: str) -> str:
 
     value = _run_predictor(_CATEGORY_PREDICTOR, text)
     if value:
+        _log_prediction_path("category", "model")
         return _normalize_category(value)
 
-    return "Complaint"
+    _log_prediction_path("category", "fallback", "predictor unavailable or returned empty value")
+    _raise_if_strict("category", "predictor unavailable or returned empty value")
+
+    return "negative"
 
 
 def predict_topic(text: str) -> str:
@@ -202,7 +256,11 @@ def predict_topic(text: str) -> str:
 
     value = _run_predictor(_TOPIC_PREDICTOR, text)
     if value:
+        _log_prediction_path("topic", "model")
         return value
+
+    _log_prediction_path("topic", "fallback", "predictor unavailable or returned empty value")
+    _raise_if_strict("topic", "predictor unavailable or returned empty value")
 
     return "internet outage"
 
@@ -215,12 +273,22 @@ def predict_urgency(category: str, text: str = "") -> bool:
             value = _URGENT_PREDICTOR(text)
             parsed = _coerce_urgency(value)
             if parsed is not None:
+                _log_prediction_path("urgency", "model")
                 return parsed
+
+            _log_prediction_path("urgency", "fallback", "predictor returned unparsable value")
+            _raise_if_strict("urgency", "predictor returned unparsable value")
         except Exception:
+            if _strict_mode_enabled():
+                raise RuntimeError("ML_STRICT_MODE blocked fallback for urgency: predictor runtime error")
+
             _log_exception_once(
                 "predictor_runtime:urgency",
                 "Error while running urgency predictor; category-based fallback will be used.",
             )
 
+    _log_prediction_path("urgency", "fallback", "category-based fallback path")
+    _raise_if_strict("urgency", "category-based fallback would be used")
+
     normalized = _normalize_category(category)
-    return normalized in ("Complaint", "Escalation")
+    return normalized in ("negative", "complaint", "escalation")

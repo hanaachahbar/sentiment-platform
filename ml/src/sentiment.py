@@ -15,6 +15,18 @@ _MODEL_DIR = (
 	/ "algerie_telecom_urgency"
 )
 
+_STRICT_TRUE_VALUES = {"1", "true", "yes", "on"}
+
+
+def _strict_mode_enabled() -> bool:
+	return os.getenv("ML_STRICT_MODE", "false").strip().lower() in _STRICT_TRUE_VALUES
+
+
+def _fallback_default(reason: str) -> bool:
+	if _strict_mode_enabled():
+		raise RuntimeError(f"ML_STRICT_MODE blocked urgency fallback: {reason}")
+	return False
+
 
 def _load_model_once() -> None:
 	global _TOKENIZER, _MODEL
@@ -61,7 +73,7 @@ def _decode_urgency(pred_idx: int) -> bool:
 def predict_urgency(text: Optional[str]) -> bool:
 	normalized_text = (text or "").strip()
 	if not normalized_text:
-		return False
+		return _fallback_default("empty input text")
 
 	try:
 		_load_model_once()
@@ -78,8 +90,8 @@ def predict_urgency(text: Optional[str]) -> bool:
 
 		pred_idx = int(torch.argmax(logits, dim=-1).item())
 		return _decode_urgency(pred_idx)
-	except Exception:
-		return False
+	except Exception as exc:
+		return _fallback_default(f"inference runtime error: {exc}")
 
 
 def predict_ticket_urgency(text: Optional[str]) -> bool:
