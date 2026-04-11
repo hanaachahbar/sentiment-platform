@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Body
 from database import SessionLocal, TopicDictionary
 from datetime import datetime
+from topic_model_service import rename_topic_in_model
 
 router = APIRouter()
 
@@ -44,6 +45,13 @@ def rename_topic(id: int, data: dict = Body(...)):
         if existing:
             raise HTTPException(status_code=400, detail="Topic name already exists")
 
+        model_ok = rename_topic_in_model(id, new_name)
+        if not model_ok:
+            raise HTTPException(
+                status_code=400,
+                detail="Failed to rename topic in BERTopic model. Check model directory and topic id.",
+            )
+
         topic.topic_name = new_name
         topic.updated_at = datetime.utcnow()
         db.commit()
@@ -51,6 +59,7 @@ def rename_topic(id: int, data: dict = Body(...)):
         return {
             "id": topic.id,
             "topic_name": topic.topic_name,
+            "model_updated": True,
             "message": "Topic label updated successfully"
         }
 

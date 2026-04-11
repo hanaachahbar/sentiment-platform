@@ -4,29 +4,48 @@ import logoImg from '../assets/logo.png';
 import { fetchPosts, updateCategory, resolveTicket, exportTickets } from '../api';
 
 // SLA formatting helper: compute remaining time from sla_deadline
-function formatSLA(slaDeadline) {
+function formatSLA(slaDeadline, status) {
   if (!slaDeadline) return '—';
+
+  if ((status || '').toLowerCase() === 'resolved') {
+    return 'Resolved';
+  }
+
   const now = new Date();
   const deadline = new Date(slaDeadline);
+
+  if (Number.isNaN(deadline.getTime())) {
+    return '—';
+  }
+
   const diffMs = deadline - now;
-  const isNegative = diffMs < 0;
   const absDiff = Math.abs(diffMs);
-  const hours = Math.floor(absDiff / (1000 * 60 * 60));
+
+  const days = Math.floor(absDiff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((absDiff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
   const minutes = Math.floor((absDiff % (1000 * 60 * 60)) / (1000 * 60));
   const seconds = Math.floor((absDiff % (1000 * 60)) / 1000);
-  const hh = String(hours).padStart(2, '0');
-  const mm = String(minutes).padStart(2, '0');
-  const ss = String(seconds).padStart(2, '0');
-  return `${isNegative ? '-' : ''}${hh}:${mm}:${ss}`;
+
+  if (diffMs < 0) {
+    return `Breached by ${days}d ${hours}h ${minutes}m`;
+  }
+
+  if (days > 0) {
+    return `${days}d ${hours}h ${minutes}m left`;
+  }
+
+  return `${hours}h ${minutes}m ${seconds}s left`;
 }
 
 // Capitalize first letter helper
-function capitalize(str) {
+function _capitalize(str) {
   if (!str) return '';
   return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
 }
 
-export default function Feed({ selectedTicketId }) {
+export default function Feed() {
+  const PAGE_SIZE = 4;
+
   // API data
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -51,7 +70,7 @@ export default function Feed({ selectedTicketId }) {
   const [customEndStr, setCustomEndStr] = useState('');
 
   // Pagination State
-  const [visibleCount, setVisibleCount] = useState(4);
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Export Modal State
   const [isExportModalOpen, setExportModalOpen] = useState(false);
@@ -184,7 +203,19 @@ export default function Feed({ selectedTicketId }) {
     return true;
   });
 
-  const displayedItems = filteredItems.slice(0, visibleCount);
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const displayedItems = filteredItems.slice(pageStart, pageStart + PAGE_SIZE);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterCat, filterUrg, filterStatus, timeRange.start, timeRange.end]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   const getCategoryColor = (cat) => {
     if (!cat) return 'var(--text-secondary)';
@@ -372,7 +403,7 @@ export default function Feed({ selectedTicketId }) {
                     <span className="badge-urgent"><AlertCircle size={16}/> HIGH URGENCY</span>
                   )}
                   <span className="badge-sla text-fade">
-                    <Clock size={16}/> SLA: <span style={{color: item.status === 'breached' ? '#e11d48' : 'inherit', marginLeft: '6px'}}>{formatSLA(item.sla_deadline)}</span>
+                    <Clock size={16}/> SLA: <span style={{color: item.status === 'breached' ? '#e11d48' : 'inherit', marginLeft: '6px'}}>{formatSLA(item.sla_deadline, item.status)}</span>
                   </span>
                 </div>
               </div>
@@ -433,23 +464,40 @@ export default function Feed({ selectedTicketId }) {
           )}
         </div>
 
-        {/* Pagination & Load More */}
-        {filteredItems.length > visibleCount && (
+        {/* Pagination */}
+        {totalPages > 1 && (
           <div className="pagination-wrapper mt-8 stun-item" style={{animationDelay: '0.2s'}}>
             <div className="pagination-controls glass-panel">
-              <button className="page-btn page-arrow"><ArrowLeft size={18} /></button>
-              <button className="page-btn active">1</button>
-              <button className="page-btn">2</button>
-              <span className="page-dots text-fade">...</span>
-              <button className="page-btn page-arrow"><ArrowRight size={18} /></button>
+              <button
+                className="page-btn page-arrow"
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+              >
+                <ArrowLeft size={18} />
+              </button>
+
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                <button
+                  key={page}
+                  className={`page-btn ${currentPage === page ? 'active' : ''}`}
+                  onClick={() => setCurrentPage(page)}
+                >
+                  {page}
+                </button>
+              ))}
+
+              <button
+                className="page-btn page-arrow"
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+              >
+                <ArrowRight size={18} />
+              </button>
             </div>
-            
-            <button 
-              className="load-more-full-btn hover-lift-shadow font-lg"
-              onClick={() => setVisibleCount(prev => prev + 4)}
-            >
-              Show More Comments
-            </button>
+
+            <span className="text-fade" style={{fontSize: '14px', fontWeight: 600}}>
+              Page {currentPage} of {totalPages}
+            </span>
           </div>
         )}
 

@@ -1,0 +1,266 @@
+import importlib.util
+import logging
+import os
+from pathlib import Path
+from types import ModuleType
+from typing import Callable, Optional, Tuple
+
+logger = logging.getLogger(__name__)
+
+_TOPIC_MODEL = None
+_TOPIC_MODEL_LOADED = False
+_BERTOPIC_CLASS = None
+_BERTOPIC_CHECKED = False
+
+
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def _load_module(module_name: str, file_path: Path) -> Optional[ModuleType]:
+    if not file_path.exists():
+        return None
+
+    spec = importlib.util.spec_from_file_location(module_name, str(file_path))
+    if spec is None or spec.loader is None:
+        return None
+
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+        return module
+    except Exception:
+        logger.exception("Failed to load module %s from %s", module_name, file_path)
+        return None
+
+
+def _resolve_function(module: Optional[ModuleType], fn_name: str) -> Optional[Callable]:
+    if module is None:
+        return None
+    fn = getattr(module, fn_name, None)
+    return fn if callable(fn) else None
+
+
+def _candidate_model_directories() -> list[Path]:
+    root = _project_root()
+    explicit = os.getenv("TOPIC_MODEL_DIRECTORY", "").strip()
+
+    candidates = []
+    if explicit:
+        candidates.append(Path(explicit))
+
+    candidates.append(root / "ml" / "models" / "algerie_telecom_bertopic")
+    candidates.append(root / "ml" / "models" / "sentiment")
+
+    unique_existing = []
+    seen = set()
+    for path in candidates:
+        key = str(path.resolve()) if path.exists() else str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        if path.exists() and path.is_dir():
+            unique_existing.append(path)
+
+    return unique_existing
+
+
+def get_topic_model_directory() -> Optional[Path]:
+    candidates = _candidate_model_directories()
+    return candidates[0] if candidates else None
+
+
+def _load_bertopic_class():
+    global _BERTOPIC_CLASS, _BERTOPIC_CHECKED
+
+    if _BERTOPIC_CHECKED:
+        return _BERTOPIC_CLASS
+
+    _BERTOPIC_CHECKED = True
+
+    try:
+        module = importlib.import_module("bertopic")
+    except Exception:
+        logger.warning("BERTopic package is not available; topic model runtime will use fallback")
+        return None
+
+    topic_cls = getattr(module, "BERTopic", None)
+    if topic_cls is None:
+        logger.warning("BERTopic package loaded but BERTopic class was not found")
+        return None
+
+    _BERTOPIC_CLASS = topic_cls
+    return _BERTOPIC_CLASS
+
+
+def _topic_label_from_model(topic_model, topic_id: int) -> str:
+    if topic_id == -1:
+        return "Other Minor Issues"
+
+    try:
+        custom_labels = getattr(topic_model, "custom_labels_", None)
+        outliers = int(getattr(topic_model, "_outliers", 1))
+        index = topic_id + outliers
+        if isinstance(custom_labels, list) and 0 <= index < len(custom_labels):
+            label = str(custom_labels[index]).strip()
+            if label:
+                return label
+    except Exception:
+        pass
+
+    try:
+        topic_info = topic_model.get_topic_info()
+        row = topic_info[topic_info["Topic"] == topic_id]
+        if not row.empty:
+            if "CustomName" in row.columns and row.iloc[0]["CustomName"]:
+                return str(row.iloc[0]["CustomName"]).strip()
+            if "Name" in row.columns and row.iloc[0]["Name"]:
+                return str(row.iloc[0]["Name"]).strip()
+    except Exception:
+        pass
+
+    return f"topic_{topic_id}"
+
+
+def preload_topic_model() -> bool:
+    global _TOPIC_MODEL, _TOPIC_MODEL_LOADED
+
+    if _TOPIC_MODEL_LOADED:
+        return _TOPIC_MODEL is not None
+
+    _TOPIC_MODEL_LOADED = True
+
+    model_dir = get_topic_model_directory()
+    if model_dir is None:
+        logger.warning("No BERTopic model directory found. Topic model runtime disabled.")
+        return False
+
+    try:
+        BERTopic = _load_bertopic_class()
+        if BERTopic is None:
+            return False
+
+        _TOPIC_MODEL = BERTopic.load(str(model_dir))
+        logger.info("BERTopic model loaded from %s", model_dir)
+        return True
+    except Exception:
+        logger.exception("Failed to load BERTopic model from %s", model_dir)
+        _TOPIC_MODEL = None
+        return False
+
+
+def _fallback_predict_topic(text: str) -> str:
+    root = _project_root()
+    topic_module = _load_module("ml_topic_runtime_fallback", root / "ml" / "src" / "topic.py")
+    predict_fn = _resolve_function(topic_module, "predict_topic")
+
+    if predict_fn is None:
+        return "internet outage"
+
+    try:
+        value = predict_fn(text)
+    except Exception:
+        return "internet outage"
+
+    return value.strip() if isinstance(value, str) and value.strip() else "internet outage"
+
+
+def predict_topic(text: str) -> Tuple[Optional[int], str]:
+    normalized_text = (text or "").strip()
+    if not normalized_text:
+        return None, "internet outage"
+
+    if preload_topic_model() and _TOPIC_MODEL is not None:
+        try:
+            topics, _ = _TOPIC_MODEL.transform([normalized_text])
+            topic_id = int(topics[0])
+            topic_name = _topic_label_from_model(_TOPIC_MODEL, topic_id)
+            return topic_id, topic_name
+        except Exception:
+            logger.exception("BERTopic transform failed, using fallback topic predictor")
+
+    return None, _fallback_predict_topic(normalized_text)
+
+
+def run_monthly_topic_update() -> bool:
+    if _load_bertopic_class() is None:
+        logger.info("Monthly topic update skipped: BERTopic dependency unavailable")
+        return False
+
+    model_dir = get_topic_model_directory()
+    if model_dir is None:
+        logger.warning("Monthly topic update skipped: no model directory")
+        return False
+
+    data_file = os.getenv("MONTHLY_DATA_FILE", "").strip()
+    if not data_file:
+        logger.info("Monthly topic update skipped: MONTHLY_DATA_FILE is not set")
+        return False
+
+    data_path = Path(data_file)
+    if not data_path.is_absolute():
+        data_path = _project_root() / data_path
+
+    if not data_path.exists():
+        logger.warning("Monthly topic update skipped: data file does not exist (%s)", data_path)
+        return False
+
+    updater_module = _load_module(
+        "ml_monthly_auto_updater_runtime",
+        _project_root() / "ml" / "src" / "monthly_auto_updater.py",
+    )
+    run_fn = _resolve_function(updater_module, "run_monthly_pipeline")
+
+    if run_fn is None:
+        logger.warning("Monthly topic update skipped: run_monthly_pipeline not available")
+        return False
+
+    try:
+        ok = bool(run_fn(str(data_path), str(model_dir)))
+    except Exception:
+        logger.exception("Monthly topic update execution failed")
+        return False
+
+    if ok:
+        # Force reload of updated model on next request.
+        global _TOPIC_MODEL_LOADED, _TOPIC_MODEL
+        _TOPIC_MODEL = None
+        _TOPIC_MODEL_LOADED = False
+        preload_topic_model()
+
+    return ok
+
+
+def rename_topic_in_model(topic_id: int, new_name: str) -> bool:
+    if _load_bertopic_class() is None:
+        logger.info("Model rename skipped: BERTopic dependency unavailable")
+        return False
+
+    model_dir = get_topic_model_directory()
+    if model_dir is None:
+        logger.warning("Model rename skipped: no model directory")
+        return False
+
+    manager_module = _load_module(
+        "ml_topic_manager_runtime",
+        _project_root() / "ml" / "src" / "topic_manager.py",
+    )
+    rename_fn = _resolve_function(manager_module, "rename_topic")
+
+    if rename_fn is None:
+        logger.warning("Model rename skipped: rename_topic function not available")
+        return False
+
+    try:
+        ok = bool(rename_fn(str(model_dir), int(topic_id), str(new_name)))
+    except Exception:
+        logger.exception("Model rename failed")
+        return False
+
+    if ok:
+        global _TOPIC_MODEL_LOADED, _TOPIC_MODEL
+        _TOPIC_MODEL = None
+        _TOPIC_MODEL_LOADED = False
+        preload_topic_model()
+
+    return ok

@@ -70,7 +70,7 @@ body {
   color: var(--text-primary);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
-  font-size: 28px;
+  font-size: 16px;
 }
 
 /* Welcome Banner Styles */
@@ -172,7 +172,7 @@ body {
 }
 
 .welcome-subtitle {
-  font-size: 20px;
+  font-size: 16px;
   color: rgba(255, 255, 255, 0.75);
   line-height: 1.8;
   margin: 0;

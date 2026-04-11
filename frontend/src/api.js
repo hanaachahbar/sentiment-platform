@@ -27,6 +27,15 @@ export async function fetchStats() {
 }
 
 // ────────────────────────────────────────────
+// GET /api/fetcher/status  —  scheduler/fetcher monitor state
+// ────────────────────────────────────────────
+export async function fetchFetcherStatus() {
+  const res = await fetch(`${API_BASE}/api/fetcher/status`);
+  if (!res.ok) throw new Error(`Failed to fetch fetcher status: ${res.status}`);
+  return res.json();
+}
+
+// ────────────────────────────────────────────
 // GET /api/trends  —  trending topics
 // ────────────────────────────────────────────
 export async function fetchTrends(fromDate, toDate) {
