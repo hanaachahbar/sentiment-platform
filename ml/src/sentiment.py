@@ -61,7 +61,7 @@ def _decode_urgency(pred_idx: int) -> bool:
 def predict_urgency(text: Optional[str]) -> bool:
 	normalized_text = (text or "").strip()
 	if not normalized_text:
-		return False
+		raise RuntimeError("Urgency prediction failed: empty input text")
 
 	try:
 		_load_model_once()
@@ -78,8 +78,8 @@ def predict_urgency(text: Optional[str]) -> bool:
 
 		pred_idx = int(torch.argmax(logits, dim=-1).item())
 		return _decode_urgency(pred_idx)
-	except Exception:
-		return False
+	except Exception as exc:
+		raise RuntimeError(f"Urgency inference runtime error: {exc}") from exc
 
 
 def predict_ticket_urgency(text: Optional[str]) -> bool:

@@ -42,7 +42,7 @@ function App() {
   const [selectedTicketId, setSelectedTicketId] = useState(null);
   const [fetcherStatus, setFetcherStatus] = useState(null);
   const [fetcherStatusError, setFetcherStatusError] = useState('');
-  const [countdownNowMs, setCountdownNowMs] = useState(Date.now());
+  const [countdownNowMs, setCountdownNowMs] = useState(() => Date.now());
 
   const handleNavigateToTrend = (trendId) => {
     setSelectedTrendId(trendId || null);
@@ -87,7 +87,7 @@ function App() {
     };
 
     loadFetcherStatus();
-    const poll = setInterval(loadFetcherStatus, 5000);
+    const poll = setInterval(loadFetcherStatus, 15000);
 
     return () => {
       isMounted = false;

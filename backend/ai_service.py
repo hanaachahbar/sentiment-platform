@@ -12,7 +12,11 @@ _TOPIC_PREDICTOR: Optional[Callable[[str], str]] = None
 _URGENT_PREDICTOR: Optional[Callable[[str], object]] = None
 _PREDICTORS_LOADED = False
 _RUNTIME_ERROR_KEYS: set[str] = set()
-
+_LAST_PREDICTION_PATH = {
+    "category": "unknown",
+    "topic": "unknown",
+    "urgency": "unknown",
+}
 
 def _log_exception_once(key: str, message: str, *args) -> None:
     if key in _RUNTIME_ERROR_KEYS:
@@ -20,6 +24,19 @@ def _log_exception_once(key: str, message: str, *args) -> None:
 
     _RUNTIME_ERROR_KEYS.add(key)
     logger.exception(message, *args)
+
+
+def _log_prediction_path(component: str, path: str, reason: str = "") -> None:
+    previous = _LAST_PREDICTION_PATH.get(component)
+    _LAST_PREDICTION_PATH[component] = path
+
+    if previous == path:
+        return
+
+    if reason:
+        logger.warning("Prediction path %s=%s (%s)", component, path, reason)
+    else:
+        logger.warning("Prediction path %s=%s", component, path)
 
 
 def _load_module(module_name: str, file_path: Path) -> Optional[ModuleType]:
@@ -60,8 +77,7 @@ def _load_predictors_once() -> None:
     _PREDICTORS_LOADED = True
 
     if os.getenv("USE_ML_PREDICTORS", "true").lower() != "true":
-        logger.warning("USE_ML_PREDICTORS is disabled; fallback logic will be used.")
-        return
+        raise RuntimeError("USE_ML_PREDICTORS must be true for strict model-only inference")
 
     project_root = Path(__file__).resolve().parents[1]
     ml_src = project_root / "ml" / "src"
@@ -84,39 +100,32 @@ def _load_predictors_once() -> None:
     )
 
     if _CATEGORY_PREDICTOR is None:
-        logger.warning("Category predictor unavailable; fallback category='Complaint' will be used.")
+        raise RuntimeError("Category predictor is unavailable in ml/src/classifier.py")
     if _TOPIC_PREDICTOR is None:
-        logger.warning("Topic predictor unavailable; fallback topic='internet outage' will be used.")
+        raise RuntimeError("Topic predictor is unavailable in ml/src/topic.py")
     if _URGENT_PREDICTOR is None:
-        logger.warning("Urgency predictor unavailable; fallback urgency rules will be used.")
+        raise RuntimeError("Urgency predictor is unavailable in ml/src/sentiment.py")
 
 
-def _run_predictor(predictor: Optional[Callable[[str], str]], text: str) -> Optional[str]:
+def _run_predictor(
+    predictor: Optional[Callable[[str], str]],
+    text: str,
+    component: str,
+) -> str:
     if predictor is None:
-        return None
+        raise RuntimeError(f"{component} predictor is unavailable")
 
     try:
         value = predictor(text)
-    except Exception:
+    except Exception as exc:
         predictor_name = getattr(predictor, "__name__", "unknown")
-        _log_exception_once(
-            f"predictor_runtime:{predictor_name}",
-            "Error while running predictor %s; fallback will be used.",
-            predictor_name,
-        )
-        return None
+        _log_exception_once(f"predictor_runtime:{predictor_name}", "Error while running predictor %s", predictor_name)
+        raise RuntimeError(f"{component} predictor runtime error: {exc}") from exc
 
     if isinstance(value, str) and value.strip():
         return value.strip()
-    return None
 
-
-def _normalize_category(category: str) -> str:
-    mapping = {
-        "Information Request": "Inquiry",
-        "Service Request": "Request",
-    }
-    return mapping.get(category, category)
+    raise RuntimeError(f"{component} predictor returned an empty or invalid value")
 
 
 def _coerce_urgency(value: object) -> Optional[bool]:
@@ -137,6 +146,7 @@ def _coerce_urgency(value: object) -> Optional[bool]:
             "1",
             "escalation",
             "complaint",
+            "negative",
         }
         falsy = {
             "false",
@@ -148,8 +158,14 @@ def _coerce_urgency(value: object) -> Optional[bool]:
             "neutral",
             "other",
             "compliment",
+            "positive",
             "inquiry",
             "question",
+            "interrogative",
+            "off-topic",
+            "out_of_topic",
+            "suggestion",
+            "neutral",
         }
 
         if normalized in truthy:
@@ -161,7 +177,11 @@ def _coerce_urgency(value: object) -> Optional[bool]:
 
 
 def get_predictors_runtime_status() -> dict[str, object]:
-    _load_predictors_once()
+    status_error = None
+    try:
+        _load_predictors_once()
+    except Exception as exc:
+        status_error = str(exc)
 
     enabled = os.getenv("USE_ML_PREDICTORS", "true").lower() == "true"
     missing: list[str] = []
@@ -184,43 +204,54 @@ def get_predictors_runtime_status() -> dict[str, object]:
         "urgency_available": urgency_available,
         "all_available": enabled and not missing,
         "missing": missing,
+        "prediction_path_last": dict(_LAST_PREDICTION_PATH),
+        "error": status_error,
     }
 
 
 def predict_category(text: str) -> str:
     _load_predictors_once()
 
-    value = _run_predictor(_CATEGORY_PREDICTOR, text)
-    if value:
-        return _normalize_category(value)
+    normalized_text = (text or "").strip()
+    if not normalized_text:
+        raise RuntimeError("Category prediction failed: empty input text")
 
-    return "Complaint"
+    value = _run_predictor(_CATEGORY_PREDICTOR, normalized_text, "Category")
+    _log_prediction_path("category", "model")
+    return value
 
 
 def predict_topic(text: str) -> str:
     _load_predictors_once()
 
-    value = _run_predictor(_TOPIC_PREDICTOR, text)
-    if value:
-        return value
+    normalized_text = (text or "").strip()
+    if not normalized_text:
+        raise RuntimeError("Topic prediction failed: empty input text")
 
-    return "internet outage"
+    value = _run_predictor(_TOPIC_PREDICTOR, normalized_text, "Topic")
+    _log_prediction_path("topic", "model")
+    return value
 
 
 def predict_urgency(category: str, text: str = "") -> bool:
     _load_predictors_once()
 
-    if _URGENT_PREDICTOR is not None and text:
-        try:
-            value = _URGENT_PREDICTOR(text)
-            parsed = _coerce_urgency(value)
-            if parsed is not None:
-                return parsed
-        except Exception:
-            _log_exception_once(
-                "predictor_runtime:urgency",
-                "Error while running urgency predictor; category-based fallback will be used.",
-            )
+    normalized_text = (text or "").strip()
+    if not normalized_text:
+        raise RuntimeError("Urgency prediction failed: empty input text")
 
-    normalized = _normalize_category(category)
-    return normalized in ("Complaint", "Escalation")
+    if _URGENT_PREDICTOR is None:
+        raise RuntimeError("Urgency predictor is unavailable")
+
+    try:
+        value = _URGENT_PREDICTOR(normalized_text)
+    except Exception as exc:
+        _log_exception_once("predictor_runtime:urgency", "Error while running urgency predictor")
+        raise RuntimeError(f"Urgency predictor runtime error: {exc}") from exc
+
+    parsed = _coerce_urgency(value)
+    if parsed is None:
+        raise RuntimeError(f"Urgency predictor returned unparsable value: {value!r}")
+
+    _log_prediction_path("urgency", "model")
+    return parsed

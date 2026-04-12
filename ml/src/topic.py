@@ -59,18 +59,18 @@ def _load_profiles_once() -> None:
 def predict_topic(text: Optional[str]) -> str:
 	normalized_text = (text or "").strip()
 	if not normalized_text:
-		return "internet outage"
+		raise RuntimeError("Topic prediction failed: empty input text")
 
 	_load_profiles_once()
 
 	if not _TOPIC_PROFILES:
-		return "internet outage"
+		raise RuntimeError("Topic prediction failed: no topic profiles loaded")
 
 	tokens = _normalize_tokens(normalized_text)
 	if not tokens:
-		return "internet outage"
+		raise RuntimeError("Topic prediction failed: tokenization produced no tokens")
 
-	best_label = "internet outage"
+	best_label = ""
 	best_score = 0
 
 	for label, keywords in _TOPIC_PROFILES:
@@ -79,5 +79,8 @@ def predict_topic(text: Optional[str]) -> str:
 			best_score = score
 			best_label = label
 
-	return best_label if best_score > 0 else "internet outage"
+	if best_score > 0:
+		return best_label
+
+	raise RuntimeError("Topic prediction failed: no topic keyword overlap")
 

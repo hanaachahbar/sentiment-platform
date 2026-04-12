@@ -23,15 +23,6 @@ _INDEX_TO_RAW_LABEL = {
 	4: "suggestion",
 }
 
-_RAW_TO_BACKEND_CATEGORY = {
-	"interrogative": "Inquiry",
-	"negative": "Complaint",
-	"off-topic": "Other",
-	"positive": "Compliment",
-	"suggestion": "Suggestion",
-}
-
-
 def _load_model_once() -> None:
 	global _TOKENIZER, _MODEL
 
@@ -47,14 +38,16 @@ def _load_model_once() -> None:
 
 
 def _decode_index(pred_idx: int) -> str:
-	raw = _INDEX_TO_RAW_LABEL.get(pred_idx, f"LABEL_{pred_idx}")
-	return _RAW_TO_BACKEND_CATEGORY.get(raw, raw)
+	label = _INDEX_TO_RAW_LABEL.get(pred_idx)
+	if label is None:
+		raise RuntimeError(f"Classifier returned unknown label index: {pred_idx}")
+	return label
 
 
 def predict_category(text: Optional[str]) -> str:
 	normalized_text = (text or "").strip()
 	if not normalized_text:
-		return "Complaint"
+		raise RuntimeError("Classifier prediction failed: empty input text")
 
 	try:
 		_load_model_once()
@@ -71,6 +64,6 @@ def predict_category(text: Optional[str]) -> str:
 
 		pred_idx = int(torch.argmax(logits, dim=-1).item())
 		return _decode_index(pred_idx)
-	except Exception:
-		return "Complaint"
+	except Exception as exc:
+		raise RuntimeError(f"Classifier inference runtime error: {exc}") from exc
 
