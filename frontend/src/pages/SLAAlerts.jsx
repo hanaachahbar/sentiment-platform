@@ -13,7 +13,24 @@ import {
 import logoImg from '../assets/logo.png';
 import { fetchPosts } from '../api';
 
-// Compute SLA remaining time from sla_deadline
+// Format absolute seconds into human-readable string with days, hours, minutes, seconds
+function formatDuration(seconds) {
+  if (seconds === 0) return '0s';
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  
+  const parts = [];
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0) parts.push(`${minutes}m`);
+  if (secs > 0 || parts.length === 0) parts.push(`${secs}s`);
+  
+  return parts.join(' ');
+}
+
+// Compute SLA remaining time from sla_deadline (returns human-readable duration without minus sign)
 function computeSLA(slaDeadline) {
   if (!slaDeadline) return { totalSeconds: 0, displayTime: '—', isBreach: false, isAtRisk: false };
   
@@ -22,24 +39,17 @@ function computeSLA(slaDeadline) {
   const diffMs = deadline - now;
   const totalSeconds = Math.floor(diffMs / 1000);
   const isNegative = diffMs < 0;
-  const absDiff = Math.abs(diffMs);
-  const hours = Math.floor(absDiff / (1000 * 60 * 60));
-  const minutes = Math.floor((absDiff % (1000 * 60 * 60)) / (1000 * 60));
-  const seconds = Math.floor((absDiff % (1000 * 60)) / 1000);
-  const hh = String(hours).padStart(2, '0');
-  const mm = String(minutes).padStart(2, '0');
-  const ss = String(seconds).padStart(2, '0');
-  const displayTime = `${isNegative ? '-' : ''}${hh}:${mm}:${ss}`;
-
+  const absSeconds = Math.abs(totalSeconds);
+  
   return {
-    totalSeconds,
-    displayTime,
+    totalSeconds,            // signed, used for sorting (most urgent first)
+    displayTime: formatDuration(absSeconds),
     isBreach: isNegative,
     isAtRisk: !isNegative && totalSeconds < 3600, // Less than 1 hour remaining
   };
 }
 
-export default function SLAAlerts({ onNavigateToDashboard, onNavigateToFeed }) {
+export default function SLAAlerts({ onNavigateToFeed }) {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -49,7 +59,6 @@ export default function SLAAlerts({ onNavigateToDashboard, onNavigateToFeed }) {
       setLoading(true);
       setError(null);
       try {
-        // Fetch all posts, then filter for SLA-relevant ones
         const data = await fetchPosts();
         
         const slaAlerts = data
@@ -66,7 +75,7 @@ export default function SLAAlerts({ onNavigateToDashboard, onNavigateToFeed }) {
               ...sla,
             };
           })
-          .sort((a, b) => a.totalSeconds - b.totalSeconds); // Most urgent first
+          .sort((a, b) => a.totalSeconds - b.totalSeconds); // Most urgent first (negative = overdue)
 
         setAlerts(slaAlerts);
       } catch (err) {
@@ -192,7 +201,7 @@ export default function SLAAlerts({ onNavigateToDashboard, onNavigateToFeed }) {
                     {/* Customer Name */}
                     <span style={{fontSize: '18px', fontWeight: '700', color: 'white'}}>{alert.author}</span>
                     
-                    {/* Time Remaining */}
+                    {/* Time Remaining (now without minus sign, showing days when applicable) */}
                     <div style={{display: 'flex', alignItems: 'center', gap: '8px', color: alert.isBreach ? '#e11d48' : '#f59e0b', fontWeight: '700', fontSize: '18px'}}>
                       <Clock size={20} />
                       {alert.displayTime}

@@ -3,7 +3,9 @@ import logging
 import os
 from pathlib import Path
 from types import ModuleType
-from typing import Callable, Optional, Tuple
+from typing import Any, Callable, Optional, Tuple
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -11,28 +13,11 @@ _TOPIC_MODEL = None
 _TOPIC_MODEL_LOADED = False
 _BERTOPIC_CLASS = None
 _BERTOPIC_CHECKED = False
-_STRICT_TRUE_VALUES = {"1", "true", "yes", "on"}
 _LAST_TOPIC_SOURCE = "unknown"
-_TOPIC_RUNTIME_ERROR_KEYS: set[str] = set()
 _TOPIC_MODEL_DISABLED_REASON: Optional[str] = None
 
-
-def _strict_mode_enabled() -> bool:
-    return os.getenv("ML_STRICT_MODE", "false").strip().lower() in _STRICT_TRUE_VALUES
-
-
-def _raise_if_strict(reason: str) -> None:
-    if _strict_mode_enabled():
-        raise RuntimeError(f"ML_STRICT_MODE blocked topic fallback: {reason}")
-
-
-def _log_exception_once(key: str, message: str, *args) -> None:
-    if key in _TOPIC_RUNTIME_ERROR_KEYS:
-        return
-
-    _TOPIC_RUNTIME_ERROR_KEYS.add(key)
-    logger.exception(message, *args)
-
+_DEFAULT_TOPIC_CONFIDENCE_THRESHOLD = 0.80
+_DEFAULT_TOPIC_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
 def _disable_topic_model_for_inference(reason: str) -> None:
     global _TOPIC_MODEL, _TOPIC_MODEL_DISABLED_REASON
@@ -42,7 +27,7 @@ def _disable_topic_model_for_inference(reason: str) -> None:
 
     _TOPIC_MODEL_DISABLED_REASON = reason
     _TOPIC_MODEL = None
-    logger.warning("BERTopic inference disabled: %s. Falling back to ml/src/topic.py.", reason)
+    logger.warning("BERTopic inference disabled: %s.", reason)
 
 
 def _log_topic_source(source: str, reason: str = "") -> None:
@@ -87,6 +72,65 @@ def _resolve_function(module: Optional[ModuleType], fn_name: str) -> Optional[Ca
     return fn if callable(fn) else None
 
 
+def _topic_confidence_threshold() -> float:
+    raw = os.getenv("TOPIC_CONFIDENCE_THRESHOLD", str(_DEFAULT_TOPIC_CONFIDENCE_THRESHOLD)).strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        return _DEFAULT_TOPIC_CONFIDENCE_THRESHOLD
+
+    if value < 0.0:
+        return 0.0
+    if value > 1.0:
+        return 1.0
+    return value
+
+
+def _resolve_topic_embedding_model() -> Optional[str]:
+    raw = os.getenv("TOPIC_EMBEDDING_MODEL", "").strip()
+    if raw:
+        lowered = raw.lower()
+        if lowered in {"none", "null", "off", "false", "disabled"}:
+            return None
+        return raw
+    return _DEFAULT_TOPIC_EMBEDDING_MODEL
+
+
+def _extract_max_confidence(probabilities: Any) -> Optional[float]:
+    if probabilities is None:
+        return None
+
+    try:
+        row = probabilities[0]
+    except Exception:
+        row = probabilities
+
+    if row is None:
+        return None
+
+    if isinstance(row, (list, tuple)):
+        if not row:
+            return None
+        try:
+            return float(max(row))
+        except Exception:
+            return None
+
+    try:
+        arr = np.asarray(row, dtype=float)
+    except Exception:
+        try:
+            return float(row)
+        except Exception:
+            return None
+
+    if arr.size == 0:
+        return None
+    if arr.ndim == 0:
+        return float(arr.item())
+    return float(arr.max())
+
+
 def _candidate_model_directories() -> list[Path]:
     root = _project_root()
     explicit = os.getenv("TOPIC_MODEL_DIRECTORY", "").strip()
@@ -127,7 +171,7 @@ def _load_bertopic_class():
     try:
         module = importlib.import_module("bertopic")
     except Exception:
-        logger.warning("BERTopic package is not available; topic model runtime will use fallback")
+        logger.warning("BERTopic package is not available")
         return None
 
     topic_cls = getattr(module, "BERTopic", None)
@@ -187,7 +231,12 @@ def preload_topic_model() -> bool:
         if BERTopic is None:
             return False
 
-        _TOPIC_MODEL = BERTopic.load(str(model_dir))
+        embedding_model = _resolve_topic_embedding_model()
+        if embedding_model is not None:
+            _TOPIC_MODEL = BERTopic.load(str(model_dir), embedding_model=embedding_model)
+        else:
+            _TOPIC_MODEL = BERTopic.load(str(model_dir))
+
         if getattr(_TOPIC_MODEL, "embedding_model", None) is None:
             _disable_topic_model_for_inference("embedding model is not configured in saved BERTopic artifact")
             return False
@@ -200,71 +249,45 @@ def preload_topic_model() -> bool:
         return False
 
 
-def _fallback_predict_topic(text: str) -> str:
-    root = _project_root()
-    topic_module = _load_module("ml_topic_runtime_fallback", root / "ml" / "src" / "topic.py")
-    predict_fn = _resolve_function(topic_module, "predict_topic")
-
-    if predict_fn is None:
-        _log_topic_source("fallback", "ml/src/topic.py predictor unavailable")
-        _raise_if_strict("ml/src/topic.py predictor is unavailable")
-        return "internet outage"
-
-    try:
-        value = predict_fn(text)
-    except Exception as exc:
-        _log_topic_source("fallback", "ml/src/topic.py runtime error")
-        if _strict_mode_enabled():
-            raise RuntimeError("ML_STRICT_MODE blocked topic fallback: ml/src/topic.py runtime error") from exc
-        return "internet outage"
-
-    if isinstance(value, str) and value.strip():
-        _log_topic_source("fallback", "ml/src/topic.py predictor")
-        return value.strip()
-
-    _log_topic_source("fallback", "ml/src/topic.py empty value")
-    _raise_if_strict("ml/src/topic.py returned empty value")
-    return "internet outage"
-
-
 def predict_topic(text: str) -> Tuple[Optional[int], str]:
     normalized_text = (text or "").strip()
     if not normalized_text:
-        _raise_if_strict("empty text input")
-        return None, "internet outage"
+        raise RuntimeError("Topic prediction failed: empty text input")
 
     if _TOPIC_MODEL_DISABLED_REASON is not None:
-        _log_topic_source("fallback", _TOPIC_MODEL_DISABLED_REASON)
-        _raise_if_strict(_TOPIC_MODEL_DISABLED_REASON)
-        return None, _fallback_predict_topic(normalized_text)
+        raise RuntimeError(f"Topic model is disabled: {_TOPIC_MODEL_DISABLED_REASON}")
 
-    if preload_topic_model() and _TOPIC_MODEL is not None:
-        try:
-            topics, _ = _TOPIC_MODEL.transform([normalized_text])
-            topic_id = int(topics[0])
-            topic_name = _topic_label_from_model(_TOPIC_MODEL, topic_id)
-            _log_topic_source("bertopic")
-            return topic_id, topic_name
-        except Exception as exc:
-            message = str(exc)
-            if "No embedding model was found to embed the documents" in message:
-                _disable_topic_model_for_inference("BERTopic transform cannot run without an embedding model")
-                _log_topic_source("fallback", "BERTopic transform cannot run without embedding model")
-                _raise_if_strict("BERTopic transform cannot run without embedding model")
-                return None, _fallback_predict_topic(normalized_text)
+    if not preload_topic_model() or _TOPIC_MODEL is None:
+        raise RuntimeError("BERTopic model unavailable or not loaded")
 
-            _log_topic_source("fallback", "BERTopic transform failed")
-            if _strict_mode_enabled():
-                raise RuntimeError("ML_STRICT_MODE blocked topic fallback: BERTopic transform failed") from exc
+    try:
+        topics, probabilities = _TOPIC_MODEL.transform([normalized_text])
 
-            _log_exception_once(
-                "bertopic_transform_runtime",
-                "BERTopic transform failed, using fallback topic predictor",
+        predicted_topic_id = int(topics[0])
+        final_topic_id = predicted_topic_id
+        max_confidence = _extract_max_confidence(probabilities)
+        threshold = _topic_confidence_threshold()
+
+        if max_confidence is not None and max_confidence < threshold:
+            final_topic_id = -1
+
+        topic_name = _topic_label_from_model(_TOPIC_MODEL, final_topic_id)
+
+        if max_confidence is not None and final_topic_id == -1 and predicted_topic_id != -1:
+            _log_topic_source(
+                "bertopic",
+                reason=f"confidence={max_confidence:.3f} below threshold={threshold:.2f}; routed to outlier",
             )
+        else:
+            _log_topic_source("bertopic")
 
-    _log_topic_source("fallback", "BERTopic model unavailable or not loaded")
-    _raise_if_strict("BERTopic model unavailable or not loaded")
-    return None, _fallback_predict_topic(normalized_text)
+        return final_topic_id, topic_name
+    except Exception as exc:
+        message = str(exc)
+        if "No embedding model was found to embed the documents" in message:
+            _disable_topic_model_for_inference("BERTopic transform cannot run without an embedding model")
+            raise RuntimeError("Topic prediction failed: BERTopic transform cannot run without embedding model") from exc
+        raise RuntimeError(f"Topic prediction failed: {message}") from exc
 
 
 def run_monthly_topic_update() -> bool:

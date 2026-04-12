@@ -44,10 +44,7 @@ def get_trends(from_date: str = None, to_date: str = None):
     previous_end = current_start
     previous_start = current_start - duration
 
-    # Load only active topics from TopicDictionary
-    # This gives us: is_active filtering + fast name lookup by topic_id
     active_topics = db.query(TopicDictionary).filter(TopicDictionary.is_active == True).all()
-    active_topic_ids = {t.id for t in active_topics}
     topic_name_by_id = {t.id: t.topic_name for t in active_topics}
 
     all_tickets = db.query(Ticket).all()
@@ -65,21 +62,14 @@ def get_trends(from_date: str = None, to_date: str = None):
     current_counts = {}
     previous_counts = {}
     current_topic_tickets = {}
-    topic_names = {}
 
     # Count tickets in current period
     for t in current_tickets:
-        topic_id = t.topic_id if t.topic_id is not None else 0
+        topic_id = t.topic_id
 
-        # Resolve topic name: pre-loaded dict first, ORM fallback, then "Other"
-        if topic_id in topic_name_by_id:
-            topic_name = topic_name_by_id[topic_id]
-        elif t.topic_ref:
-            topic_name = t.topic_ref.topic_name
-        else:
-            topic_name = "Other"
+        if topic_id is None or topic_id not in topic_name_by_id:
+            continue
 
-        topic_names[topic_id] = topic_name
         current_counts[topic_id] = current_counts.get(topic_id, 0) + 1
 
         if topic_id not in current_topic_tickets:
@@ -94,25 +84,16 @@ def get_trends(from_date: str = None, to_date: str = None):
 
     # Count tickets in previous period
     for t in previous_tickets:
-        topic_id = t.topic_id if t.topic_id is not None else 0
+        topic_id = t.topic_id
 
-        if topic_id in topic_name_by_id:
-            topic_name = topic_name_by_id[topic_id]
-        elif t.topic_ref:
-            topic_name = t.topic_ref.topic_name
-        else:
-            topic_name = "Other"
+        if topic_id is None or topic_id not in topic_name_by_id:
+            continue
 
-        topic_names[topic_id] = topic_name
         previous_counts[topic_id] = previous_counts.get(topic_id, 0) + 1
 
     trends = []
 
     for topic_id, count in current_counts.items():
-        # Skip inactive topics (but keep topic_id=0 which is the "Other" bucket)
-        if topic_id != 0 and topic_id not in active_topic_ids:
-            continue
-
         previous_count = previous_counts.get(topic_id, 0)
         diff = count - previous_count
 
@@ -126,12 +107,10 @@ def get_trends(from_date: str = None, to_date: str = None):
             direction = "stable"
             change = "0 vs previous period"
 
-        is_active = (topic_id in active_topic_ids) if topic_id != 0 else True
-
         trends.append({
             "topic_id": topic_id,
-            "topic": topic_names.get(topic_id, "Other"),
-            "is_active": is_active,
+            "topic": topic_name_by_id[topic_id],
+            "is_active": True,
             "count": count,
             "direction": direction,
             "change": change,
@@ -146,29 +125,7 @@ def get_trends(from_date: str = None, to_date: str = None):
     except ValueError:
         top_n = 8
 
-    if len(trends) > top_n:
-        top_trends = trends[:top_n]
-        minor_trends = trends[top_n:]
-
-        minor_count = sum(item["count"] for item in minor_trends)
-        minor_tickets = []
-        for item in minor_trends:
-            minor_tickets.extend(item.get("tickets", []))
-
-        if minor_count > 0:
-            top_trends.append(
-                {
-                    "topic_id": -999,
-                    "topic": "Other Minor Issues",
-                    "is_active": True,
-                    "count": minor_count,
-                    "direction": "stable",
-                    "change": "Grouped minor topics",
-                    "tickets": minor_tickets[:50],
-                }
-            )
-
-        trends = top_trends
+    trends = trends[:top_n]
 
     response = {
         "current_period": {

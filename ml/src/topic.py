@@ -1,5 +1,4 @@
 import json
-import os
 import re
 from pathlib import Path
 from typing import Optional
@@ -7,17 +6,6 @@ from typing import Optional
 _TOPIC_MODEL_JSON = Path(__file__).resolve().parents[1] / "models" / "sentiment" / "topics.json"
 
 _TOPIC_PROFILES = None
-_STRICT_TRUE_VALUES = {"1", "true", "yes", "on"}
-
-
-def _strict_mode_enabled() -> bool:
-	return os.getenv("ML_STRICT_MODE", "false").strip().lower() in _STRICT_TRUE_VALUES
-
-
-def _fallback_default(reason: str) -> str:
-	if _strict_mode_enabled():
-		raise RuntimeError(f"ML_STRICT_MODE blocked topic fallback: {reason}")
-	return "internet outage"
 
 
 def _normalize_tokens(text: str) -> set[str]:
@@ -71,18 +59,18 @@ def _load_profiles_once() -> None:
 def predict_topic(text: Optional[str]) -> str:
 	normalized_text = (text or "").strip()
 	if not normalized_text:
-		return _fallback_default("empty input text")
+		raise RuntimeError("Topic prediction failed: empty input text")
 
 	_load_profiles_once()
 
 	if not _TOPIC_PROFILES:
-		return _fallback_default("no topic profiles loaded")
+		raise RuntimeError("Topic prediction failed: no topic profiles loaded")
 
 	tokens = _normalize_tokens(normalized_text)
 	if not tokens:
-		return _fallback_default("tokenization produced no tokens")
+		raise RuntimeError("Topic prediction failed: tokenization produced no tokens")
 
-	best_label = "internet outage"
+	best_label = ""
 	best_score = 0
 
 	for label, keywords in _TOPIC_PROFILES:
@@ -94,5 +82,5 @@ def predict_topic(text: Optional[str]) -> str:
 	if best_score > 0:
 		return best_label
 
-	return _fallback_default("no topic keyword overlap")
+	raise RuntimeError("Topic prediction failed: no topic keyword overlap")
 

@@ -7,7 +7,7 @@ import httpx
 from dotenv import load_dotenv
 
 from database import SessionLocal, Ticket, TopicDictionary
-from ai_service import predict_category, predict_urgency, predict_topic
+from ai_service import predict_category, predict_urgency
 from sla import calculate_sla_deadline
 from topic_model_service import predict_topic as predict_topic_with_model
 from time_utils import now_local, parse_facebook_time_to_local
@@ -248,9 +248,6 @@ def fetch_facebook_posts():
             is_urgent = predict_urgency(category, message)
             topic_model_id, topic_name = predict_topic_with_model(message)
 
-            if not topic_name:
-                topic_name = predict_topic(message)
-
             topic_id = _get_or_create_topic_id(db, topic_name, topic_model_id)
 
             from_data = post.get("from", {})
@@ -281,13 +278,13 @@ def fetch_facebook_posts():
             "inserted_count": new_count,
             "error": None,
         }
-    except Exception:
+    except Exception as exc:
         db.rollback()
         logger.exception("Error during Facebook fetch")
         return {
             "success": False,
             "inserted_count": 0,
-            "error": "Error during Facebook fetch",
+            "error": f"Error during Facebook fetch: {exc}",
         }
     finally:
         db.close()

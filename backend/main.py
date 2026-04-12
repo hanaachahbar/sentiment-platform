@@ -56,30 +56,44 @@ scheduler = BackgroundScheduler(timezone="UTC")
 async def lifespan(_: FastAPI):
     _load_environment()
 
-    predictor_status = get_predictors_runtime_status()
-    logger.warning(
-        "ML models availability at startup: category=%s topic=%s urgency=%s",
-        "YES" if predictor_status["category_available"] else "NO",
-        "YES" if predictor_status["topic_available"] else "NO",
-        "YES" if predictor_status["urgency_available"] else "NO",
-    )
-
-    missing_predictors = predictor_status["missing"]
-    if missing_predictors:
+    model_check_on_startup = os.getenv("CHECK_ML_MODELS_ON_STARTUP", "true").strip().lower() == "true"
+    if model_check_on_startup:
+        predictor_status = get_predictors_runtime_status()
         logger.warning(
-            "ML predictor check at startup: missing=%s (fallbacks active)",
-            ", ".join(missing_predictors),
+            "ML models availability at startup: category=%s topic=%s urgency=%s",
+            "YES" if predictor_status["category_available"] else "NO",
+            "YES" if predictor_status["topic_available"] else "NO",
+            "YES" if predictor_status["urgency_available"] else "NO",
         )
-    else:
-        logger.info("ML predictor check at startup: category/topic/urgency predictors are available")
 
-    topic_model_ready = preload_topic_model()
-    logger.warning(
-        "BERTopic model availability at startup: %s",
-        "YES" if topic_model_ready else "NO",
-    )
-    if not topic_model_ready:
-        logger.warning("Topic model check at startup: BERTopic unavailable, fallback topic predictor is active")
+        missing_predictors = predictor_status["missing"]
+        if missing_predictors:
+            logger.warning(
+                "ML predictor check at startup: missing=%s",
+                ", ".join(missing_predictors),
+            )
+        else:
+            logger.info("ML predictor check at startup: category/topic/urgency predictors are available")
+    else:
+        logger.info(
+            "Skipped heavy ML startup check (CHECK_ML_MODELS_ON_STARTUP=false); "
+            "predictors will load lazily on demand."
+        )
+
+    preload_topic_on_startup = os.getenv("PRELOAD_TOPIC_MODEL_ON_STARTUP", "true").strip().lower() == "true" 
+    if preload_topic_on_startup:
+        topic_model_ready = preload_topic_model()
+        logger.warning(
+            "BERTopic model availability at startup: %s",
+            "YES" if topic_model_ready else "NO",
+        )
+        if not topic_model_ready:
+            logger.warning("Topic model check at startup: BERTopic unavailable")
+    else:
+        logger.info(
+            "Skipped BERTopic preload at startup (PRELOAD_TOPIC_MODEL_ON_STARTUP=false); "
+            "topic model will load lazily on demand."
+        )
 
     fetch_interval = _env_minutes("FETCH_INTERVAL_MINUTES", 5)
     sla_interval = _env_minutes("SLA_CHECK_INTERVAL_MINUTES", 60)
