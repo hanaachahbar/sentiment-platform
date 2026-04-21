@@ -1,9 +1,17 @@
 from fastapi import APIRouter, HTTPException, Body
 from database import SessionLocal, TopicDictionary
-from datetime import datetime
-from topic_model_service import rename_topic_in_model
+from time_utils import now_local
 
 router = APIRouter()
+
+
+def _serialize_topic(topic: TopicDictionary) -> dict:
+    return {
+        "id": topic.id,
+        "topic_name": topic.topic_name,
+        "is_active": topic.is_active,
+        "updated_at": topic.updated_at.isoformat() if topic.updated_at else None,
+    }
 
 @router.get("/api/topics")
 def get_topics():
@@ -21,6 +29,7 @@ def get_topics():
     finally:
         db.close()
 
+@router.patch("/api/topics/{id}/rename")
 @router.patch("/api/topics/{id}")
 def rename_topic(id: int, data: dict = Body(...)):
     db = SessionLocal()
@@ -43,25 +52,14 @@ def rename_topic(id: int, data: dict = Body(...)):
         ).first()
 
         if existing:
-            raise HTTPException(status_code=400, detail="Topic name already exists")
-
-        model_ok = rename_topic_in_model(id, new_name)
-        if not model_ok:
-            raise HTTPException(
-                status_code=400,
-                detail="Failed to rename topic in BERTopic model. Check model directory and topic id.",
-            )
+            return _serialize_topic(existing)
 
         topic.topic_name = new_name
-        topic.updated_at = datetime.utcnow()
+        topic.updated_at = now_local()
         db.commit()
+        db.refresh(topic)
 
-        return {
-            "id": topic.id,
-            "topic_name": topic.topic_name,
-            "model_updated": True,
-            "message": "Topic label updated successfully"
-        }
+        return _serialize_topic(topic)
 
     finally:
         db.close()

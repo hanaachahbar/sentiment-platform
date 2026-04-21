@@ -18,6 +18,14 @@ _TOPIC_MODEL_DISABLED_REASON: Optional[str] = None
 
 _DEFAULT_TOPIC_CONFIDENCE_THRESHOLD = 0.80
 _DEFAULT_TOPIC_EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+_DEFAULT_LOCAL_TOPIC_EMBEDDING_DIRS = (
+    "local_model",
+    "ml/models/local_model",
+    "ml/models/topic_embedding_model",
+)
+
+_SENTENCE_TRANSFORMER_CLASS = None
+_SENTENCE_TRANSFORMER_CHECKED = False
 
 def _disable_topic_model_for_inference(reason: str) -> None:
     global _TOPIC_MODEL, _TOPIC_MODEL_DISABLED_REASON
@@ -87,13 +95,125 @@ def _topic_confidence_threshold() -> float:
 
 
 def _resolve_topic_embedding_model() -> Optional[str]:
-    raw = os.getenv("TOPIC_EMBEDDING_MODEL", "").strip()
-    if raw:
-        lowered = raw.lower()
-        if lowered in {"none", "null", "off", "false", "disabled"}:
-            return None
-        return raw
-    return _DEFAULT_TOPIC_EMBEDDING_MODEL
+    explicit_local = os.getenv("TOPIC_EMBEDDING_MODEL_PATH", "").strip()
+    if explicit_local:
+        explicit_path = Path(explicit_local)
+        if not explicit_path.is_absolute():
+            explicit_path = _project_root() / explicit_path
+        local_model = _ensure_sentence_transformer_directory(explicit_path)
+        if local_model is not None:
+            return str(local_model)
+        return None
+
+    local_dir = _resolve_local_topic_embedding_model()
+    if local_dir is not None:
+        logger.info("Using local offline topic embedding model from %s", local_dir)
+        return str(local_dir)
+
+    local_model = _ensure_sentence_transformer_directory(_default_topic_embedding_directory())
+    if local_model is not None:
+        return str(local_model)
+
+    return None
+
+
+def _default_topic_embedding_directory() -> Path:
+    return _project_root() / _DEFAULT_LOCAL_TOPIC_EMBEDDING_DIRS[0]
+
+
+def _load_sentence_transformer_class():
+    global _SENTENCE_TRANSFORMER_CLASS, _SENTENCE_TRANSFORMER_CHECKED
+
+    if _SENTENCE_TRANSFORMER_CHECKED:
+        return _SENTENCE_TRANSFORMER_CLASS
+
+    _SENTENCE_TRANSFORMER_CHECKED = True
+
+    try:
+        module = importlib.import_module("sentence_transformers")
+    except Exception:
+        logger.warning("sentence_transformers package is not available")
+        return None
+
+    sentence_transformer_cls = getattr(module, "SentenceTransformer", None)
+    if sentence_transformer_cls is None:
+        logger.warning("sentence_transformers package loaded but SentenceTransformer class was not found")
+        return None
+
+    _SENTENCE_TRANSFORMER_CLASS = sentence_transformer_cls
+    return _SENTENCE_TRANSFORMER_CLASS
+
+
+def _is_sentence_transformer_directory(path: Path) -> bool:
+    if not path.exists() or not path.is_dir():
+        return False
+
+    required_files = ("modules.json", "config_sentence_transformers.json")
+    return all((path / filename).exists() for filename in required_files)
+
+
+def _ensure_sentence_transformer_directory(target_dir: Path) -> Optional[Path]:
+    if _is_sentence_transformer_directory(target_dir):
+        return target_dir
+
+    source_model = os.getenv("TOPIC_EMBEDDING_MODEL", _DEFAULT_TOPIC_EMBEDDING_MODEL).strip()
+    if not source_model or source_model.lower() in {"none", "null", "off", "false", "disabled"}:
+        source_model = _DEFAULT_TOPIC_EMBEDDING_MODEL
+
+    sentence_transformer_cls = _load_sentence_transformer_class()
+    if sentence_transformer_cls is None:
+        return None
+
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(
+            "Downloading topic embedding model %s to %s",
+            source_model,
+            target_dir,
+        )
+        sentence_transformer = sentence_transformer_cls(source_model)
+        sentence_transformer.save(str(target_dir))
+    except Exception:
+        logger.exception(
+            "Failed to download and save topic embedding model %s to %s",
+            source_model,
+            target_dir,
+        )
+        return None
+
+    if _is_sentence_transformer_directory(target_dir):
+        logger.info("Topic embedding model cached locally at %s", target_dir)
+        return target_dir
+
+    logger.warning(
+        "Topic embedding model download completed but the saved directory is incomplete: %s",
+        target_dir,
+    )
+    return None
+
+
+def _resolve_local_topic_embedding_model() -> Optional[Path]:
+    root = _project_root()
+    explicit = os.getenv("TOPIC_EMBEDDING_MODEL_PATH", "").strip()
+
+    candidates = []
+    if explicit:
+        explicit_path = Path(explicit)
+        if not explicit_path.is_absolute():
+            explicit_path = root / explicit_path
+        candidates.append(explicit_path)
+
+    for relative_path in _DEFAULT_LOCAL_TOPIC_EMBEDDING_DIRS:
+        candidates.append(root / relative_path)
+
+    for candidate in candidates:
+        try:
+            if _is_sentence_transformer_directory(candidate):
+                return candidate
+        except OSError:
+            continue
+
+    return None
 
 
 def _extract_max_confidence(probabilities: Any) -> Optional[float]:

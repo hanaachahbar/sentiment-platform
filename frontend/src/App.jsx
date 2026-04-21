@@ -115,25 +115,49 @@ function App() {
         </div>
 
         <nav className="nav-menu">
-          <a href="#" className={`nav-item hover-lift ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={(e) => { e.preventDefault(); setActiveTab('dashboard'); }}>
+          <a
+            href="#"
+            className={`nav-item hover-lift ${activeTab === 'dashboard' ? 'active' : ''}`}
+            onClick={(e) => { e.preventDefault(); setActiveTab('dashboard'); }}
+            aria-label="Dashboard"
+            title="Dashboard"
+          >
             <LayoutDashboard size={20} className="nav-icon" />
-            Dashboard
+            <span className="nav-label">Dashboard</span>
           </a>
-          <a href="#" className={`nav-item hover-lift ${activeTab === 'feed' ? 'active' : ''}`} onClick={(e) => { e.preventDefault(); setActiveTab('feed'); }}>
+          <a
+            href="#"
+            className={`nav-item hover-lift ${activeTab === 'feed' ? 'active' : ''}`}
+            onClick={(e) => { e.preventDefault(); setActiveTab('feed'); }}
+            aria-label="Feed"
+            title="Feed"
+          >
             <MessageSquare size={20} className="nav-icon" />
-            Feed
+            <span className="nav-label">Feed</span>
           </a>
-          <a href="#" className={`nav-item hover-lift ${activeTab === 'trends' ? 'active' : ''}`} onClick={(e) => { e.preventDefault(); setActiveTab('trends'); }}>
+          <a
+            href="#"
+            className={`nav-item hover-lift ${activeTab === 'trends' ? 'active' : ''}`}
+            onClick={(e) => { e.preventDefault(); setActiveTab('trends'); }}
+            aria-label="Trends"
+            title="Trends"
+          >
             <TrendingUp size={20} className="nav-icon" />
-            Trends
+            <span className="nav-label">Trends</span>
           </a>
-          <a href="#" className={`nav-item hover-lift ${activeTab === 'sla-alerts' ? 'active' : ''}`} onClick={(e) => { e.preventDefault(); setActiveTab('sla-alerts'); }}>
+          <a
+            href="#"
+            className={`nav-item hover-lift ${activeTab === 'sla-alerts' ? 'active' : ''}`}
+            onClick={(e) => { e.preventDefault(); setActiveTab('sla-alerts'); }}
+            aria-label="SLA Alerts"
+            title="SLA Alerts"
+          >
             <AlertCircle size={20} className="nav-icon" />
-            SLA Alerts
+            <span className="nav-label">SLA Alerts</span>
           </a>
-          <a href="#" className="nav-item hover-lift">
+          <a href="#" className="nav-item hover-lift" aria-label="Settings" title="Settings" onClick={(e) => e.preventDefault()}>
             <Settings size={20} className="nav-icon" />
-            Settings
+            <span className="nav-label">Settings</span>
           </a>
 
           <div className="fetcher-monitor-card">
