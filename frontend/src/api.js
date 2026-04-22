@@ -67,6 +67,30 @@ export async function fetchTrends(fromDate, toDate) {
 }
 
 // ────────────────────────────────────────────
+// PATCH /api/topics/{id}/rename  —  rename a topic label
+// ────────────────────────────────────────────
+export async function renameTopic(id, topic_name) {
+  const res = await fetch(`${API_BASE}/api/topics/${id}/rename`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ topic_name }),
+  });
+
+  if (!res.ok) {
+    let detail = `Failed to rename topic: ${res.status}`;
+    try {
+      const payload = await res.json();
+      detail = payload?.detail || detail;
+    } catch {
+      // Keep the default detail when the backend response is not JSON.
+    }
+    throw new Error(detail);
+  }
+
+  return res.json();
+}
+
+// ────────────────────────────────────────────
 // PATCH /api/tickets/{id}/category
 // ────────────────────────────────────────────
 export async function updateCategory(id, category) {
@@ -93,12 +117,14 @@ export async function resolveTicket(id) {
 // ────────────────────────────────────────────
 // GET /api/export  —  download CSV
 // ────────────────────────────────────────────
-export async function exportTickets({ from_date, to_date, status, category } = {}) {
+export async function exportTickets({ from_date, to_date, status, category, columns, file_format } = {}) {
   const params = new URLSearchParams();
   if (from_date) params.append("from_date", from_date);
   if (to_date)   params.append("to_date", to_date);
   if (status)    params.append("status", status);
   if (category)  params.append("category", category);
+  if (columns)   params.append("columns", columns);
+  if (file_format) params.append("file_format", file_format);
 
   const res = await fetch(`${API_BASE}/api/export?${params.toString()}`);
   if (!res.ok) throw new Error(`Failed to export: ${res.status}`);

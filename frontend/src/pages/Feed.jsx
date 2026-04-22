@@ -55,6 +55,24 @@ function _getEffectiveCategory(item) {
   return manual;
 }
 
+function _getFacebookReplyLink(item) {
+  const sourceLink = (item?.source_link || '').toString().trim();
+  if (sourceLink) return sourceLink;
+
+  const searchText = [item?.text, item?.author]
+    .filter(Boolean)
+    .map((value) => value.toString().trim())
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+
+  if (!searchText) {
+    return 'https://www.facebook.com/';
+  }
+
+  return `https://www.facebook.com/search/posts/?q=${encodeURIComponent(searchText)}`;
+}
+
 export default function Feed() {
   const PAGE_SIZE = 4;
 
@@ -83,6 +101,7 @@ export default function Feed() {
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageJumpValue, setPageJumpValue] = useState('1');
 
   // Export Modal State
   const [isExportModalOpen, setExportModalOpen] = useState(false);
@@ -91,6 +110,7 @@ export default function Feed() {
     customerName: true,
     dateTime: true,
     commentText: true,
+    isUrgent: false,
     category: true,
     status: true,
     slaValue: true,
@@ -249,9 +269,22 @@ export default function Feed() {
   const pageStart = (currentPage - 1) * PAGE_SIZE;
   const displayedItems = filteredItems.slice(pageStart, pageStart + PAGE_SIZE);
 
+  const handlePageJump = () => {
+    const parsedPage = Number(pageJumpValue);
+    if (!Number.isFinite(parsedPage)) return;
+
+    const nextPage = Math.max(1, Math.min(totalPages, Math.trunc(parsedPage)));
+    setCurrentPage(nextPage);
+    setPageJumpValue(String(nextPage));
+  };
+
   useEffect(() => {
     setCurrentPage(1);
   }, [filterCat, filterUrg, filterStatus, timeRange.start, timeRange.end]);
+
+  useEffect(() => {
+    setPageJumpValue(String(currentPage));
+  }, [currentPage]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -300,8 +333,16 @@ export default function Feed() {
       if (timeRange.start) params.from_date = timeRange.start.toISOString();
       if (timeRange.end) params.to_date = timeRange.end.toISOString();
 
-      const blob = await exportTickets(params);
-      const ext = exportFormat === 'csv' ? 'csv' : 'csv'; // backend only supports CSV
+      const selectedColumns = Object.entries(exportColumns)
+        .filter(([, enabled]) => enabled)
+        .map(([key]) => key);
+
+      const blob = await exportTickets({
+        ...params,
+        columns: selectedColumns.join(','),
+        file_format: exportFormat,
+      });
+      const ext = exportFormat === 'excel' ? 'xlsx' : 'csv';
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -497,12 +538,15 @@ export default function Feed() {
                   </div>
                 </div>
 
-                {item.source_link && (
-                  <a href={item.source_link} target="_blank" rel="noreferrer" className="facebook-reply-btn btn-inline slide-in-btn ml-auto">
-                    <ExternalLink size={18} className="mr-2" style={{marginRight: '8px'}} />
-                    Reply on Facebook
-                  </a>
-                )}
+                <a
+                  href={_getFacebookReplyLink(item)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="facebook-reply-btn btn-inline slide-in-btn ml-auto"
+                >
+                  <ExternalLink size={18} className="mr-2" style={{marginRight: '8px'}} />
+                  Reply on Facebook
+                </a>
               </div>
             </div>
               );
@@ -528,15 +572,35 @@ export default function Feed() {
                 <ArrowLeft size={18} />
               </button>
 
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                <button
-                  key={page}
-                  className={`page-btn ${currentPage === page ? 'active' : ''}`}
-                  onClick={() => setCurrentPage(page)}
-                >
-                  {page}
-                </button>
-              ))}
+              <div className="pagination-summary-group">
+                <span className="pagination-summary text-fade">
+                  Comments {pageStart + 1}-{Math.min(pageStart + displayedItems.length, filteredItems.length)} of {filteredItems.length}
+                </span>
+
+                <div className="pagination-jump">
+                  <label className="pagination-jump-label" htmlFor="feed-page-jump">Go to page</label>
+                  <div className="pagination-jump-row">
+                    <input
+                      id="feed-page-jump"
+                      className="pagination-jump-input"
+                      type="number"
+                      min="1"
+                      max={totalPages}
+                      value={pageJumpValue}
+                      onChange={(e) => setPageJumpValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handlePageJump();
+                        }
+                      }}
+                    />
+                    <button className="page-btn page-go-btn" onClick={handlePageJump}>
+                      Go
+                    </button>
+                  </div>
+                </div>
+              </div>
 
               <button
                 className="page-btn page-arrow"
@@ -546,10 +610,6 @@ export default function Feed() {
                 <ArrowRight size={18} />
               </button>
             </div>
-
-            <span className="text-fade" style={{fontSize: '14px', fontWeight: 600}}>
-              Page {currentPage} of {totalPages}
-            </span>
           </div>
         )}
 
@@ -628,6 +688,7 @@ export default function Feed() {
                     { key: 'customerName', label: 'Customer Name' },
                     { key: 'dateTime',     label: 'Date & Time' },
                     { key: 'commentText',  label: 'Comment Text' },
+                    { key: 'isUrgent', label: 'Urgent Comment' },
                     { key: 'category',     label: 'Category' },
                     { key: 'status',       label: 'Status' },
                     { key: 'slaValue',     label: 'SLA Value' },
