@@ -66,41 +66,12 @@ async def lifespan(_: FastAPI):
             "YES" if predictor_status["urgency_available"] else "NO",
         )
 
-        missing_predictors = predictor_status["missing"]
-        if missing_predictors:
-            logger.warning(
-                "ML predictor check at startup: missing=%s",
-                ", ".join(missing_predictors),
-            )
-        else:
-            logger.info("ML predictor check at startup: category/topic/urgency predictors are available")
-    else:
-        logger.info(
-            "Skipped heavy ML startup check (CHECK_ML_MODELS_ON_STARTUP=false); "
-            "predictors will load lazily on demand."
-        )
-
-    preload_topic_on_startup = os.getenv("PRELOAD_TOPIC_MODEL_ON_STARTUP", "true").strip().lower() == "true" 
+    preload_topic_on_startup = os.getenv("PRELOAD_TOPIC_MODEL_ON_STARTUP", "true").strip().lower() == "true"
     if preload_topic_on_startup:
-        topic_model_ready = preload_topic_model()
-        logger.warning(
-            "BERTopic model availability at startup: %s",
-            "YES" if topic_model_ready else "NO",
-        )
-        if not topic_model_ready:
-            logger.warning("Topic model check at startup: BERTopic unavailable")
-    else:
-        logger.info(
-            "Skipped BERTopic preload at startup (PRELOAD_TOPIC_MODEL_ON_STARTUP=false); "
-            "topic model will load lazily on demand."
-        )
+        preload_topic_model()
 
     fetch_interval = _env_minutes("FETCH_INTERVAL_MINUTES", 5)
     sla_interval = _env_minutes("SLA_CHECK_INTERVAL_MINUTES", 60)
-    monthly_enabled = os.getenv("MONTHLY_TOPIC_UPDATE_ENABLED", "true").strip().lower() == "true"
-    monthly_day = os.getenv("MONTHLY_UPDATE_DAY", "last").strip() or "last"
-    monthly_hour = _env_int_range("MONTHLY_UPDATE_HOUR_UTC", 23, 0, 23)
-    monthly_minute = _env_int_range("MONTHLY_UPDATE_MINUTE_UTC", 55, 0, 59)
 
     configure_fetcher_monitor(fetch_interval)
 
@@ -112,6 +83,7 @@ async def lifespan(_: FastAPI):
         replace_existing=True,
         max_instances=1,
     )
+
     scheduler.add_job(
         check_sla_breaches,
         "interval",
@@ -121,7 +93,12 @@ async def lifespan(_: FastAPI):
         max_instances=1,
     )
 
+    monthly_enabled = os.getenv("MONTHLY_TOPIC_UPDATE_ENABLED", "true").strip().lower() == "true"
     if monthly_enabled:
+        monthly_day = os.getenv("MONTHLY_UPDATE_DAY", "last").strip() or "last"
+        monthly_hour = _env_int_range("MONTHLY_UPDATE_HOUR_UTC", 23, 0, 23)
+        monthly_minute = _env_int_range("MONTHLY_UPDATE_MINUTE_UTC", 55, 0, 59)
+
         scheduler.add_job(
             run_monthly_model_update,
             trigger=CronTrigger(
@@ -136,21 +113,18 @@ async def lifespan(_: FastAPI):
         )
 
     scheduler.start()
-    logger.info(
-        "Scheduler started (facebook_fetch=%dm, sla_check=%dm)",
-        fetch_interval,
-        sla_interval,
-    )
 
     try:
         yield
     finally:
         if scheduler.running:
             scheduler.shutdown(wait=False)
-            logger.info("Scheduler stopped")
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    title="TelecomSight Backend",
+    lifespan=lifespan,
+)
 
 app.include_router(posts.router)
 app.include_router(stats.router)
@@ -166,3 +140,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/")
+def root():
+    return {"message": "TelecomSight API is running", "docs": "/docs"}
