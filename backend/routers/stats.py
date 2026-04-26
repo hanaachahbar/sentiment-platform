@@ -1,136 +1,95 @@
 from datetime import timedelta
 
 from fastapi import APIRouter
-from sqlalchemy import and_, case, func
+from sqlalchemy import func
+
 from database import SessionLocal, Ticket
+from query_utils import apply_platform_filter, apply_time_filter, effective_category_expr, get_time_window
 from scheduler import get_fetcher_status
 from time_utils import now_local
 
 router = APIRouter()
 
+
 @router.get("/api/stats")
-def get_stats():
+def get_stats(platform: str = None, time_range: str = "this_week", from_date: str = None, to_date: str = None):
     db = SessionLocal()
     try:
-        today_start = now_local().replace(hour=0, minute=0, second=0, microsecond=0)
-        tomorrow_start = today_start + timedelta(days=1)
-        dashboard_start = today_start - timedelta(days=6)
+        start, end, normalized_range = get_time_window(time_range, from_date, to_date)
+        effective_category = effective_category_expr()
 
-        total = (
-            db.query(func.count(Ticket.id))
-            .filter(Ticket.created_at >= today_start)
-            .filter(Ticket.created_at < tomorrow_start)
-            .scalar()
-        ) or 0
+        base = db.query(Ticket)
+        base = apply_platform_filter(base, platform)
+        base = apply_time_filter(base, start, end)
 
-        complaints = (
-            db.query(func.count(Ticket.id))
-            .filter(Ticket.created_at >= today_start)
-            .filter(Ticket.created_at < tomorrow_start)
-            .filter(func.lower(func.coalesce(Ticket.category_manual, Ticket.category)).in_(["complaint", "negative"]))
-            .scalar()
-        ) or 0
+        tickets = base.all()
+        total = len(tickets)
+        open_tickets = sum(1 for t in tickets if t.status == "open")
+        resolved_tickets = sum(1 for t in tickets if t.status == "resolved")
+        breached_tickets = sum(1 for t in tickets if t.status == "breached")
+        complaints = sum(1 for t in tickets if (t.category_manual if t.manually_corrected and t.category_manual else t.category) in {"complaint", "negative"})
 
-        breaches = (
-            db.query(func.count(Ticket.id))
-            .filter(Ticket.status == "breached")
-            .scalar()
-        ) or 0
+        avg_response_hours = None
+        resolved_with_dates = [t for t in tickets if t.status == "resolved" and t.created_at]
+        if resolved_with_dates:
+            now = now_local()
+            avg_response_hours = round(sum((now - t.created_at).total_seconds() / 3600 for t in resolved_with_dates) / len(resolved_with_dates), 1)
 
-        open_tickets = (
-            db.query(func.count(Ticket.id))
-            .filter(Ticket.status == "open")
-            .scalar()
-        ) or 0
-
-        resolved_tickets = (
-            db.query(func.count(Ticket.id))
-            .filter(Ticket.status == "resolved")
-            .scalar()
-        ) or 0
+        # Daily activity over the selected window. For "all", show last 7 days to keep chart readable.
+        chart_end = end or now_local()
+        chart_start = start or (chart_end - timedelta(days=6))
+        if (chart_end - chart_start).days > 31:
+            chart_start = chart_end - timedelta(days=30)
 
         day_expr = func.date(Ticket.created_at)
-        daily_rows = (
-            db.query(day_expr.label("day"), func.count(Ticket.id).label("count"))
-            .filter(Ticket.created_at >= dashboard_start)
-            .filter(Ticket.created_at < tomorrow_start)
-            .group_by(day_expr)
-            .all()
-        )
-        daily_counts = {row.day: row.count for row in daily_rows}
+        daily_query = db.query(day_expr.label("day"), Ticket.status, func.count(Ticket.id).label("count"))
+        daily_query = apply_platform_filter(daily_query, platform)
+        daily_query = daily_query.filter(Ticket.created_at >= chart_start).filter(Ticket.created_at < chart_end)
+        daily_rows = daily_query.group_by(day_expr, Ticket.status).all()
 
-        status_rows = (
-            db.query(day_expr.label("day"), Ticket.status.label("status"), func.count(Ticket.id).label("count"))
-            .filter(Ticket.created_at >= dashboard_start)
-            .filter(Ticket.created_at < tomorrow_start)
-            .filter(Ticket.status.in_(["open", "resolved", "breached"]))
-            .group_by(day_expr, Ticket.status)
-            .all()
-        )
-        status_counts = {(row.day, row.status): row.count for row in status_rows}
+        daily_map = {}
+        for row in daily_rows:
+            daily_map.setdefault(row.day, {"volume": 0, "open": 0, "resolved": 0, "breached": 0})
+            daily_map[row.day]["volume"] += row.count
+            if row.status in {"open", "resolved", "breached"}:
+                daily_map[row.day][row.status] += row.count
 
         daily_activity = []
-        for offset in range(7):
-            current_day = dashboard_start + timedelta(days=offset)
-            day_key = current_day.date().isoformat()
-            daily_activity.append({
-                "name": current_day.strftime("%d %b").upper(),
-                "volume": daily_counts.get(day_key, 0),
-                "open": status_counts.get((day_key, "open"), 0),
-                "resolved": status_counts.get((day_key, "resolved"), 0),
-                "breached": status_counts.get((day_key, "breached"), 0),
-            })
+        days = max(1, min(31, (chart_end.date() - chart_start.date()).days + 1))
+        for offset in range(days):
+            day = chart_start.date() + timedelta(days=offset)
+            values = daily_map.get(day.isoformat(), {"volume": 0, "open": 0, "resolved": 0, "breached": 0})
+            daily_activity.append({"name": day.strftime("%d %b").upper(), **values})
 
-        effective_category = case(
-            (
-                and_(
-                    Ticket.manually_corrected == True,
-                    Ticket.category_manual.isnot(None),
-                    Ticket.category_manual != "",
-                ),
-                Ticket.category_manual,
-            ),
-            else_=Ticket.category,
-        )
-        category_rows = (
-            db.query(effective_category.label("category"), func.count(Ticket.id).label("count"))
-            .group_by(effective_category)
-            .all()
-        )
+        category_rows = base.with_entities(effective_category.label("category"), func.count(Ticket.id).label("count")).group_by(effective_category).all()
         category_breakdown = [
-            {
-                "name": row.category.title() if row.category else "Unknown",
-                "value": row.count,
-            }
-            for row in sorted(category_rows, key=lambda row: row.count, reverse=True)
+            {"name": (row.category or "unknown").title(), "value": row.count}
+            for row in sorted(category_rows, key=lambda r: r.count, reverse=True)
         ]
 
-        avg_response_hours = (
-            db.query(
-                func.avg(
-                    (func.julianday(func.current_timestamp()) - func.julianday(Ticket.created_at)) * 24.0
-                )
-            )
-            .filter(Ticket.status == "resolved")
-            .scalar()
-        )
+        platform_rows = base.with_entities(Ticket.platform, func.count(Ticket.id).label("count")).group_by(Ticket.platform).all()
+        platform_breakdown = [{"name": row.platform or "unknown", "value": row.count} for row in platform_rows]
 
-        response = {
+        return {
+            "time_range": normalized_range,
+            "from": start.isoformat() if start else None,
+            "to": end.isoformat() if end else None,
+            "platform": platform or "all",
             "total_posts_today": total,
+            "total_mentions": total,
             "complaint_percentage": (complaints / total * 100) if total else 0,
-            "sla_breaches": breaches,
-            "breached_tickets": breaches,
+            "sla_breaches": breached_tickets,
+            "breached_tickets": breached_tickets,
             "open_tickets": open_tickets,
             "resolved_tickets": resolved_tickets,
-            "total_tickets": open_tickets + resolved_tickets + breaches,
-            "avg_response_hours": round(avg_response_hours, 1) if avg_response_hours is not None else None,
+            "total_tickets": total,
+            "avg_response_hours": avg_response_hours,
             "dashboard": {
                 "daily_activity": daily_activity,
                 "category_breakdown": category_breakdown,
+                "platform_breakdown": platform_breakdown,
             },
         }
-
-        return response
     finally:
         db.close()
 
