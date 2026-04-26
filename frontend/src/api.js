@@ -33,8 +33,12 @@ export async function fetchTopics() {
 // ────────────────────────────────────────────
 // GET /api/stats  —  dashboard KPIs
 // ────────────────────────────────────────────
-export async function fetchStats() {
-  const res = await fetch(`${API_BASE}/api/stats`);
+export async function fetchStats({ platform, time_range } = {}) {
+  const params = new URLSearchParams();
+  if (platform && platform.toLowerCase() !== 'all') params.append("platform", platform.toLowerCase());
+  if (time_range) params.append("time_range", time_range);
+
+  const res = await fetch(`${API_BASE}/api/stats?${params.toString()}`);
   if (!res.ok) throw new Error(`Failed to fetch stats: ${res.status}`);
   return res.json();
 }

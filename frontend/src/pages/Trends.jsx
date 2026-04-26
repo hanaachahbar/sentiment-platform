@@ -59,7 +59,16 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
 
     try {
       const data = await fetchTrends();
-      const cards = (data.trends || []).map((t, i) => ({
+      // Deduplicate topics by name
+      const seen = new Set();
+      const uniqueTrends = (data.trends || []).filter(t => {
+        const key = (t.topic || '').toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      
+      const cards = uniqueTrends.map((t, i) => ({
         id: t.topic_id ?? `trend-${i}`,
         topicId: t.topic_id ?? null,
         title: t.topic || 'Unknown Topic',
@@ -69,11 +78,12 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
         type: t.direction === 'up' ? 'critical' : t.direction === 'down' ? 'declining' : 'stable',
         color: TREND_COLORS[i % TREND_COLORS.length],
         progress: Math.min(100, (t.count || 0) * 2),
+        platform: t.platform || 'all',
         comments: (t.tickets || []).map(ticket => ({
           id: ticket.id,
           author: ticket.author || 'Unknown',
           text: ticket.text || '',
-          platform: 'Facebook Post',
+          platform: ticket.platform || 'facebook',
           timestamp: 'Recent',
           source_link: ticket.source_link || '',
         })),
@@ -100,10 +110,17 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
     loadTrends().catch(() => {});
   }, []);
 
-  const visibleTrendCards = trendCards.slice(0, 10).map((c, i) => ({
-    ...c,
-    platform: i % 2 === 0 ? 'facebook' : 'instagram',
-  }));
+  // Filter and slice trend cards by platform
+  const visibleTrendCards = useMemo(() => {
+    let filtered = trendCards;
+    if (activePlatform !== 'all') {
+      filtered = trendCards.filter(t => {
+        const trendPlatform = (t.platform || 'all').toLowerCase();
+        return trendPlatform === 'all' || trendPlatform === activePlatform;
+      });
+    }
+    return filtered.slice(0, 10);
+  }, [trendCards, activePlatform]);
 
   const openRenameModal = (trend) => {
     setModalTrend(null);
@@ -250,24 +267,18 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
           </div>
         </div>
 
-        {/* Platform Tabs */}
-        <div className="platform-tabs-row mb-8 stun-item glass-panel" style={{ animationDelay: '0.05s' }}>
-          <button
-            type="button"
-            className={`platform-tab-btn ${activePlatform === 'facebook' ? 'active' : ''}`}
-            data-platform="facebook"
-            onClick={() => setActivePlatform('facebook')}
+        {/* Platform Filter */}
+        <div className="dashboard-controls-row mb-8 stun-item glass-panel" style={{ animationDelay: '0.05s' }}>
+          <span className="controls-label">Filter by Platform</span>
+          <select
+            className="sophisticated-select"
+            value={activePlatform}
+            onChange={e => setActivePlatform(e.target.value)}
           >
-            <FbIcon size={16} style={{ marginRight: '8px' }} /> Facebook Analysis
-          </button>
-          <button
-            type="button"
-            className={`platform-tab-btn ${activePlatform === 'instagram' ? 'active' : ''}`}
-            data-platform="instagram"
-            onClick={() => setActivePlatform('instagram')}
-          >
-            <IgIcon size={16} style={{ marginRight: '8px' }} /> Instagram Analysis
-          </button>
+            <option value="all">All Platforms</option>
+            <option value="facebook">Facebook</option>
+            <option value="instagram">Instagram</option>
+          </select>
         </div>
 
         {/* Chart Section */}
@@ -276,8 +287,7 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
             <div className="card-title">
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                 <h3 className="section-heading" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  {activePlatform === 'facebook' ? <FbIcon size={20} /> : <IgIcon size={20} />}
-                  {activePlatform === 'facebook' ? 'Facebook' : 'Instagram'} Trend Volume over Time
+                    Trend Volume over Time
                 </h3>
               </div>
               <p className="section-sub text-fade mt-1">Granular signal tracking across top trending topics.</p>

@@ -127,6 +127,22 @@ export default function Dashboard({ onNavigateToTrend = () => {}, onNavigateToSL
   // Trends platform filter
   const [trendsPlatform, setTrendsPlatform] = useState('all');
 
+  // Convert UI time range to backend format
+  const mapTimeRange = (uiRange) => {
+    switch (uiRange) {
+      case 'Today':
+        return 'today';
+      case 'This Week':
+        return 'this_week';
+      case 'This Month':
+        return 'this_month';
+      case 'Last 3 Months':
+        return 'last_month'; // Backend doesn't have 3-month, use last_month
+      default:
+        return 'this_week';
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
 
@@ -135,9 +151,10 @@ export default function Dashboard({ onNavigateToTrend = () => {}, onNavigateToSL
       setError(null);
 
       try {
+        const backendTimeRange = mapTimeRange(timeRange);
         const [statsData, trendsData] = await Promise.all([
-          fetchStats(),
-          fetchTrends(),
+          fetchStats({ platform: globalPlatform, time_range: backendTimeRange }),
+          fetchTrends({ platform: globalPlatform, time_range: backendTimeRange }),
         ]);
 
         if (cancelled) return;
@@ -160,14 +177,25 @@ export default function Dashboard({ onNavigateToTrend = () => {}, onNavigateToSL
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [globalPlatform, timeRange]);
 
   const dashboardSeries = useMemo(
     () => stats?.dashboard?.daily_activity ?? [],
     [stats],
   );
   const categoryData = useMemo(
-    () => withCategoryColors(stats?.dashboard?.category_breakdown ?? []),
+    () => {
+      const breakdown = stats?.dashboard?.category_breakdown ?? [];
+      // Deduplicate by name (case-insensitive)
+      const seen = new Set();
+      const deduped = breakdown.filter(item => {
+        const key = (item.name || '').toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      return withCategoryColors(deduped);
+    },
     [stats],
   );
   const categoryTotal = useMemo(
@@ -201,7 +229,7 @@ export default function Dashboard({ onNavigateToTrend = () => {}, onNavigateToSL
 
   const totalTickets = stats?.total_tickets ?? 0;
   const openTickets = stats?.open_tickets ?? 0;
-  const breachedTickets = stats?.breached_tickets ?? 0;
+  const breachedTickets = stats?.sla_breaches ?? stats?.breached_tickets ?? 0;
   const resolvedTickets = stats?.resolved_tickets ?? 0;
   const avgResponseHours = stats?.avg_response_hours;
   const slaBreachRate = totalTickets > 0
@@ -295,7 +323,7 @@ export default function Dashboard({ onNavigateToTrend = () => {}, onNavigateToSL
           <div className="kpi-spark-card glass-panel hover-lift-shadow stun-item" style={{ animationDelay: '0.1s', borderLeft: '4px solid var(--color-1)' }}>
             <div className="kpi-spark-content">
               <span className="kpi-spark-title">Total Mentions <span className="text-fade">/ {timeRange}</span></span>
-              <div className="kpi-spark-value">{stats?.total_posts_today?.toLocaleString() || '0'}</div>
+              <div className="kpi-spark-value">{stats?.total_tickets?.toLocaleString() || '0'}</div>
               <div className="kpi-spark-status" style={{ color: 'var(--color-1)' }}>
                 <TrendingUp size={14} /> {totalTickets.toLocaleString()} total
               </div>

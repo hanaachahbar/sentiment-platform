@@ -144,10 +144,9 @@ export default function Feed() {
     setLoading(true);
     setError(null);
     try {
-      // Build filter params for backend
+      // Build filter params for backend (do NOT send category filter to backend)
       const params = {};
       if (filterPlatform !== 'All') params.platform = filterPlatform.toLowerCase();
-      if (filterCat !== 'All') params.category = filterCat.toLowerCase();
       if (filterStatus !== 'All') params.status = filterStatus.toLowerCase();
       if (filterUrg === 'Urgent') params.is_urgent = true;
       if (filterUrg === 'Not Urgent') params.is_urgent = false;
@@ -158,6 +157,7 @@ export default function Feed() {
       const tickets = data.tickets || [];
       setItems(tickets);
 
+      // Build available categories from ALL fetched tickets (not filtered by category)
       const categoryMap = new Map();
       tickets.forEach((item) => {
         const category = _getEffectiveCategory(item);
@@ -180,7 +180,7 @@ export default function Feed() {
     } finally {
       setLoading(false);
     }
-  }, [filterStatus, filterUrg, filterPlatform, filterCat, timeRange.start, timeRange.end]);
+  }, [filterStatus, filterUrg, filterPlatform, timeRange.start, timeRange.end]);
 
   useEffect(() => {
     loadPosts();

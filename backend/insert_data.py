@@ -11,7 +11,7 @@ Base.metadata.drop_all(bind=engine)
 Base.metadata.create_all(bind=engine)
 
 # Load CSV
-csv_path = BASE_DIR / "data" / "comments.csv"
+csv_path = BASE_DIR / "data" / "comments_clean_with_reference.csv"
 df = pd.read_csv(csv_path)
 
 # Clean
