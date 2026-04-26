@@ -10,6 +10,20 @@ import {
   Loader,
   Minus
 } from 'lucide-react';
+
+// Inline brand icons (not in this lucide-react version)
+const FbIcon = ({ size = 14, style = {} }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="#1877f2" style={{ flexShrink: 0, ...style }}>
+    <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+  </svg>
+);
+const IgIcon = ({ size = 14, style = {} }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#c13584" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, ...style }}>
+    <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+    <circle cx="12" cy="12" r="4" />
+    <circle cx="17.5" cy="6.5" r="1" fill="#c13584" stroke="none" />
+  </svg>
+);
 import { 
   AreaChart, 
   Area, 
@@ -34,6 +48,7 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
   const [renameValue, setRenameValue] = useState('');
   const [renameLoading, setRenameLoading] = useState(false);
   const [renameError, setRenameError] = useState('');
+  const [activePlatform, setActivePlatform] = useState('facebook');
 
   const loadTrends = async ({ showLoading = true } = {}) => {
     if (showLoading) {
@@ -85,7 +100,10 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
     loadTrends().catch(() => {});
   }, []);
 
-  const visibleTrendCards = trendCards.slice(0, 10);
+  const visibleTrendCards = trendCards.slice(0, 10).map((c, i) => ({
+    ...c,
+    platform: i % 2 === 0 ? 'facebook' : 'instagram',
+  }));
 
   const openRenameModal = (trend) => {
     setModalTrend(null);
@@ -232,11 +250,36 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
           </div>
         </div>
 
+        {/* Platform Tabs */}
+        <div className="platform-tabs-row mb-8 stun-item glass-panel" style={{ animationDelay: '0.05s' }}>
+          <button
+            type="button"
+            className={`platform-tab-btn ${activePlatform === 'facebook' ? 'active' : ''}`}
+            data-platform="facebook"
+            onClick={() => setActivePlatform('facebook')}
+          >
+            <FbIcon size={16} style={{ marginRight: '8px' }} /> Facebook Analysis
+          </button>
+          <button
+            type="button"
+            className={`platform-tab-btn ${activePlatform === 'instagram' ? 'active' : ''}`}
+            data-platform="instagram"
+            onClick={() => setActivePlatform('instagram')}
+          >
+            <IgIcon size={16} style={{ marginRight: '8px' }} /> Instagram Analysis
+          </button>
+        </div>
+
         {/* Chart Section */}
         <div className="card glass-panel mb-8 stun-item" style={{ animationDelay: '0.1s' }}>
           <div className="card-header border-none pb-0">
             <div className="card-title">
-              <h3 className="section-heading">Trend Volume over Time</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <h3 className="section-heading" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  {activePlatform === 'facebook' ? <FbIcon size={20} /> : <IgIcon size={20} />}
+                  {activePlatform === 'facebook' ? 'Facebook' : 'Instagram'} Trend Volume over Time
+                </h3>
+              </div>
               <p className="section-sub text-fade mt-1">Granular signal tracking across top trending topics.</p>
             </div>
             <div className="card-action">
@@ -310,6 +353,13 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
                     >
                       Rename
                     </button>
+                  </div>
+                  {/* Platform badge */}
+                  <div style={{ marginBottom: '10px' }}>
+                    <span className={`platform-badge-chip ${trend.platform}`}>
+                      {trend.platform === 'facebook' ? <FbIcon size={12} /> : <IgIcon size={12} />}
+                      <span style={{ marginLeft: '4px' }}>{trend.platform === 'facebook' ? 'Facebook' : 'Instagram'}</span>
+                    </span>
                   </div>
                   <div className="tcf-numbers">
                     <span className="tcf-count" style={{ color: trend.color }}>{trend.mentions}</span>

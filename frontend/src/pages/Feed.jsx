@@ -1,5 +1,19 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { AlertCircle, Clock, ExternalLink, MessageCircle, ArrowLeft, ArrowRight, ChevronDown, Calendar, X, Download, FileText, Loader } from 'lucide-react';
+
+// Inline brand icons (not in this lucide-react version)
+const FbIcon = ({ size = 14 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="#1877f2" style={{ flexShrink: 0 }}>
+    <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+  </svg>
+);
+const IgIcon = ({ size = 14 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#c13584" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+    <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+    <circle cx="12" cy="12" r="4" />
+    <circle cx="17.5" cy="6.5" r="1" fill="#c13584" stroke="none" />
+  </svg>
+);
 import logoImg from '../assets/logo.png';
 import { fetchPosts, updateCategory, resolveTicket, exportTickets } from '../api';
 
@@ -85,6 +99,7 @@ export default function Feed() {
   const [filterCat, setFilterCat] = useState('All');
   const [filterUrg, setFilterUrg] = useState('All');
   const [filterStatus, setFilterStatus] = useState('All');
+  const [filterPlatform, setFilterPlatform] = useState('All');
   
   // Custom Dropdown Open States
   const [openDropdown, setOpenDropdown] = useState(null);
@@ -254,6 +269,12 @@ export default function Feed() {
     ) {
       return false;
     }
+
+    // Platform filter
+    if (filterPlatform !== 'All') {
+      const itemPlatform = (item.platform || '').toLowerCase();
+      if (!itemPlatform.includes(filterPlatform.toLowerCase())) return false;
+    }
     
     // Time Filtering (client-side on created_at)
     if (timeRange.start || timeRange.end) {
@@ -280,7 +301,7 @@ export default function Feed() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [filterCat, filterUrg, filterStatus, timeRange.start, timeRange.end]);
+  }, [filterCat, filterUrg, filterStatus, filterPlatform, timeRange.start, timeRange.end]);
 
   useEffect(() => {
     setPageJumpValue(String(currentPage));
@@ -452,6 +473,24 @@ export default function Feed() {
               )}
             </div>
 
+
+            {/* Platform Dropdown */}
+            <div className="custom-dropdown" onClick={(e) => e.stopPropagation()}>
+              <button className={`dropdown-trigger ${openDropdown === 'plat' ? 'active' : ''}`} onClick={() => toggleDropdown('plat')}>
+                {filterPlatform === 'All' ? 'Platform: All' : filterPlatform} <ChevronDown size={16} className="ml-1"/>
+              </button>
+              {openDropdown === 'plat' && (
+                <div className="dropdown-menu-list stun-item">
+                  {['All', 'Facebook', 'Instagram'].map(p => (
+                    <button key={p} className={`menu-item ${filterPlatform === p ? 'active' : ''}`}
+                      onClick={() => { setFilterPlatform(p); setOpenDropdown(null); }}>
+                      {p === 'All' ? 'All Platforms' : p}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
           </div>
 
           <div className="filter-group ml-auto" style={{gap: '12px'}}>
@@ -483,10 +522,27 @@ export default function Feed() {
                 borderLeft: `6px solid ${getCategoryColor(effectiveCategory)}`
               }}
             >
+              {/* Platform Badge — top of card */}
+              {(() => {
+                const plt = (item.platform || '').toLowerCase();
+                const isFB = plt.includes('facebook');
+                const isIG = plt.includes('instagram');
+                return (
+                  <div className="feed-platform-badge-row">
+                    <span className={`platform-badge-chip ${isFB ? 'facebook' : isIG ? 'instagram' : 'unknown'}`}>
+                      {isFB && <FbIcon size={12} />}
+                      {isIG && <IgIcon size={12} />}
+                      {!isFB && !isIG && <MessageCircle size={12} />}
+                      <span style={{ marginLeft: '4px' }}>{item.platform || 'Unknown'}</span>
+                    </span>
+                    <span className="feed-card-time text-fade">{formatDisplayTime(item.created_at)}</span>
+                  </div>
+                );
+              })()}
+
               <div className="feed-card-header">
                 <div className="feed-user-info">
                   <span className="feed-author">{item.author || 'Unknown'}</span>
-                  <span className="feed-platform text-fade"><MessageCircle size={14} style={{marginRight: '6px'}}/> {item.platform || 'Unknown'} • {formatDisplayTime(item.created_at)}</span>
                 </div>
                 
                 <div className="feed-badges">

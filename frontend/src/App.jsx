@@ -4,13 +4,14 @@ import {
   MessageSquare, 
   TrendingUp, 
   AlertCircle,
-  Settings
+  Settings as SettingsIcon
 } from 'lucide-react';
 import './App.css';
 import Dashboard from './pages/Dashboard';
 import Feed from './pages/Feed';
 import Trends from './pages/Trends';
 import SLAAlerts from './pages/SLAAlerts';
+import Settings from './pages/Settings';
 import logoImg from './assets/logo.png';
 import { fetchFetcherStatus } from './api';
 
@@ -155,8 +156,14 @@ function App() {
             <AlertCircle size={20} className="nav-icon" />
             <span className="nav-label">SLA Alerts</span>
           </a>
-          <a href="#" className="nav-item hover-lift" aria-label="Settings" title="Settings" onClick={(e) => e.preventDefault()}>
-            <Settings size={20} className="nav-icon" />
+          <a
+            href="#"
+            className={`nav-item hover-lift ${activeTab === 'settings' ? 'active' : ''}`}
+            aria-label="Settings"
+            title="Settings"
+            onClick={(e) => { e.preventDefault(); setActiveTab('settings'); }}
+          >
+            <SettingsIcon size={20} className="nav-icon" />
             <span className="nav-label">Settings</span>
           </a>
 
@@ -218,6 +225,7 @@ function App() {
             onNavigateToFeed={handleNavigateToFeed}
           />
         )}
+        {activeTab === 'settings' && <Settings />}
       </main>
     </div>
   );
