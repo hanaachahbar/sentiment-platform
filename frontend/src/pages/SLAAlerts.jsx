@@ -60,8 +60,9 @@ export default function SLAAlerts({ onNavigateToFeed }) {
       setError(null);
       try {
         const data = await fetchPosts();
+        const tickets = data.tickets || [];
         
-        const slaAlerts = data
+        const slaAlerts = tickets
           .filter(t => t.status === 'open' || t.status === 'breached')
           .map(t => {
             const sla = computeSLA(t.sla_deadline);

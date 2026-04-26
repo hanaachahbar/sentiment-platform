@@ -6,15 +6,27 @@ const DIRECT_BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.
 // ────────────────────────────────────────────
 // GET /api/posts  —  list tickets with filters
 // ────────────────────────────────────────────
-export async function fetchPosts({ platform, category, status, is_urgent } = {}) {
+export async function fetchPosts({ platform, category, status, is_urgent, time_range, from_date, to_date } = {}) {
   const params = new URLSearchParams();
-  if (platform)       params.append("platform", platform);
-  if (category)       params.append("category", category);
-  if (status)         params.append("status", status);
+  if (platform && platform.toLowerCase() !== 'all') params.append("platform", platform.toLowerCase());
+  if (category && category.toLowerCase() !== 'all') params.append("category", category.toLowerCase());
+  if (status && status.toLowerCase() !== 'all') params.append("status", status.toLowerCase());
   if (is_urgent !== undefined && is_urgent !== null) params.append("is_urgent", is_urgent);
+  if (time_range) params.append("time_range", time_range);
+  if (from_date) params.append("from_date", from_date);
+  if (to_date) params.append("to_date", to_date);
 
   const res = await fetch(`${API_BASE}/api/posts?${params.toString()}`);
   if (!res.ok) throw new Error(`Failed to fetch posts: ${res.status}`);
+  return res.json();
+}
+
+// ────────────────────────────────────────────
+// GET /api/topics  —  list topics
+// ────────────────────────────────────────────
+export async function fetchTopics() {
+  const res = await fetch(`${API_BASE}/api/topics`);
+  if (!res.ok) throw new Error(`Failed to fetch topics: ${res.status}`);
   return res.json();
 }
 
@@ -56,10 +68,12 @@ export async function fetchFetcherStatus() {
 // ────────────────────────────────────────────
 // GET /api/trends  —  trending topics
 // ────────────────────────────────────────────
-export async function fetchTrends(fromDate, toDate) {
+export async function fetchTrends({ platform, time_range, from_date, to_date } = {}) {
   const params = new URLSearchParams();
-  if (fromDate) params.append("from_date", fromDate);
-  if (toDate)   params.append("to_date", toDate);
+  if (platform && platform.toLowerCase() !== 'all') params.append("platform", platform.toLowerCase());
+  if (time_range) params.append("time_range", time_range);
+  if (from_date) params.append("from_date", from_date);
+  if (to_date) params.append("to_date", to_date);
 
   const res = await fetch(`${API_BASE}/api/trends?${params.toString()}`);
   if (!res.ok) throw new Error(`Failed to fetch trends: ${res.status}`);

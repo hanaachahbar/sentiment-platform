@@ -146,16 +146,20 @@ export default function Feed() {
     try {
       // Build filter params for backend
       const params = {};
+      if (filterPlatform !== 'All') params.platform = filterPlatform.toLowerCase();
+      if (filterCat !== 'All') params.category = filterCat.toLowerCase();
       if (filterStatus !== 'All') params.status = filterStatus.toLowerCase();
       if (filterUrg === 'Urgent') params.is_urgent = true;
       if (filterUrg === 'Not Urgent') params.is_urgent = false;
-      // Category filter done client-side since backend categories may vary
-      
+      if (timeRange.start) params.from_date = timeRange.start.toISOString();
+      if (timeRange.end) params.to_date = timeRange.end.toISOString();
+
       const data = await fetchPosts(params);
-      setItems(data);
+      const tickets = data.tickets || [];
+      setItems(tickets);
 
       const categoryMap = new Map();
-      (data || []).forEach((item) => {
+      tickets.forEach((item) => {
         const category = _getEffectiveCategory(item);
         if (!category) return;
 
@@ -176,7 +180,7 @@ export default function Feed() {
     } finally {
       setLoading(false);
     }
-  }, [filterStatus, filterUrg]);
+  }, [filterStatus, filterUrg, filterPlatform, filterCat, timeRange.start, timeRange.end]);
 
   useEffect(() => {
     loadPosts();
