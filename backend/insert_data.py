@@ -1,66 +1,67 @@
-import os
 import pandas as pd
-from database import SessionLocal, Ticket, engine, Base
-from datetime import datetime
-from sla import calculate_sla_deadline
+from database import SessionLocal, Ticket, TopicDictionary, engine, Base
 from pathlib import Path
+from datetime import timedelta
+from time_utils import now_local
 
-# Clean up existing database first
 BASE_DIR = Path(__file__).resolve().parent
 
-# Drop and recreate schema to apply column renames (fb_link -> source_link)
+# Recreate DB from scratch
 Base.metadata.drop_all(bind=engine)
 Base.metadata.create_all(bind=engine)
 
-# Load CSV safely
-csv_path = BASE_DIR / "data" / "comments.csv"
-df = pd.read_csv(csv_path, header=None)
+# CSV path
+csv_path = BASE_DIR / "data" / "comments_clean_with_reference.csv"
+df = pd.read_csv(csv_path)
 
-# Rename columns
-df.columns = ["platform", "category_raw", "text", "sentiment_raw", "urgent_flag"]
+# Clean rows
+df = df.dropna(how="all")
+df = df[df["text"].notna()]
+df = df[df["text"].astype(str).str.strip() != ""]
+df = df[df["platform"].notna()]
+df = df[df["category"].notna()]
 
 db = SessionLocal()
-
-# Clear existing data instead of deleting file to avoid PermissionError
 db.query(Ticket).delete()
+db.query(TopicDictionary).delete()
 db.commit()
-print("🧹 Cleared existing tickets from database.")
 
-for idx, row in df.iterrows():
-    created_at = datetime.utcnow()
+# Spread the tickets over time for testing
+# Some in last 48h, some before, so trends and breached statuses can be tested
+hour_offsets = [2, 5, 8, 12, 18, 24, 30, 36, 50, 60, 72, 84, 96, 120, 144, 168]
 
-    # Map sentiment_raw to proper fixed categories: positive, negative, off-topic, suggestion, interrogative
-    sentiment_map = {
-        "positive": "positive",
-        "negative": "negative",
-        "interrogative": "interrogative",
-        "off-topic": "off-topic",
-        "suggestion": "suggestion",
-        "neutral": "negative" # default to negative as requested by user
-    }
-    mapped_category = sentiment_map.get(row["sentiment_raw"].lower(), "negative")
-    
-    # Generate a dummy but valid looking link for source_link
-    source_link = f"https://www.facebook.com/search/posts?q={row['platform']}_{idx}" if row["platform"].lower() == "facebook" else f"https://www.google.com/search?q={row['platform']}_{idx}"
+now = now_local()
+
+for idx, (_, row) in enumerate(df.iterrows()):
+    topic_name = str(row["topic"]).strip() if pd.notna(row["topic"]) and str(row["topic"]).strip() != "" else "Other"
+
+    # create topic in dictionary if not exists
+    topic_obj = db.query(TopicDictionary).filter(TopicDictionary.topic_name == topic_name).first()
+    if not topic_obj:
+        topic_obj = TopicDictionary(topic_name=topic_name)
+        db.add(topic_obj)
+        db.flush()
+
+    # assign different times
+    offset_hours = hour_offsets[idx % len(hour_offsets)]
+    created_at = now - timedelta(hours=offset_hours)
+    fetched_at = created_at + timedelta(minutes=5)
+    sla_deadline = created_at + timedelta(hours=48)
 
     ticket = Ticket(
-        text=row["text"],
-        author="unknown",
-        platform=row["platform"],
-        source_link=source_link,
-
+        text=str(row["text"]).strip(),
+        author=str(row["author"]).strip() if pd.notna(row["author"]) and str(row["author"]).strip() != "" else "unknown",
+        platform=str(row["platform"]).strip(),
+        source_link=str(row["fb_link"]).strip() if pd.notna(row["fb_link"]) and str(row["fb_link"]).strip() != "" else None,
         created_at=created_at,
-
-        category=mapped_category,
-        category_manual=None,
-        manually_corrected=False,
-
-        is_urgent=True if row["urgent_flag"] == 1 else False,
-
-        topic="installation issue",
-
-        sla_deadline=calculate_sla_deadline(created_at),
-        status="open"
+        category=str(row["category"]).strip(),
+        category_manual=str(row["category_manual"]).strip() if pd.notna(row["category_manual"]) and str(row["category_manual"]).strip() != "" else None,
+        manually_corrected=str(row["manually_corrected"]).strip().lower() == "true" if pd.notna(row["manually_corrected"]) else False,
+        is_urgent=str(row["is_urgent"]).strip().lower() == "true" if pd.notna(row["is_urgent"]) else False,
+        topic_id=topic_obj.id,
+        sla_deadline=sla_deadline,
+        status="open",
+        fetched_at=fetched_at,
     )
 
     db.add(ticket)
@@ -68,4 +69,4 @@ for idx, row in df.iterrows():
 db.commit()
 db.close()
 
-print("✅ Data inserted successfully with standardized categories and source links")
+print("✅ Data inserted successfully with different timestamps.")

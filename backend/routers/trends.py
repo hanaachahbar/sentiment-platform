@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException
 from datetime import datetime, timedelta
-from database import SessionLocal, Ticket
+import os
+from database import SessionLocal, Ticket, TopicDictionary
+from time_utils import now_local
 
 router = APIRouter()
 
@@ -8,13 +10,12 @@ router = APIRouter()
 def get_trends(from_date: str = None, to_date: str = None):
     db = SessionLocal()
 
-    now = datetime.utcnow()
+    now = now_local()
 
-    # Default behavior: current 48h vs previous 48h
     if not from_date and not to_date:
+        # Default: compare last 48 hours vs the 48 hours before that
         current_end = now
         current_start = now - timedelta(hours=48)
-    # Custom behavior: user provides both dates
     elif from_date and to_date:
         try:
             current_start = datetime.fromisoformat(from_date)
@@ -39,10 +40,12 @@ def get_trends(from_date: str = None, to_date: str = None):
             detail="Provide both from_date and to_date, or neither"
         )
 
-    # Previous period has same duration as current period
     duration = current_end - current_start
     previous_end = current_start
     previous_start = current_start - duration
+
+    active_topics = db.query(TopicDictionary).filter(TopicDictionary.is_active == True).all()
+    topic_name_by_id = {t.id: t.topic_name for t in active_topics}
 
     all_tickets = db.query(Ticket).all()
 
@@ -62,13 +65,17 @@ def get_trends(from_date: str = None, to_date: str = None):
 
     # Count tickets in current period
     for t in current_tickets:
-        topic = t.topic if t.topic else "Other"
-        current_counts[topic] = current_counts.get(topic, 0) + 1
+        topic_id = t.topic_id
 
-        if topic not in current_topic_tickets:
-            current_topic_tickets[topic] = []
+        if topic_id is None or topic_id not in topic_name_by_id:
+            continue
 
-        current_topic_tickets[topic].append({
+        current_counts[topic_id] = current_counts.get(topic_id, 0) + 1
+
+        if topic_id not in current_topic_tickets:
+            current_topic_tickets[topic_id] = []
+
+        current_topic_tickets[topic_id].append({
             "id": t.id,
             "text": t.text,
             "author": t.author,
@@ -77,13 +84,17 @@ def get_trends(from_date: str = None, to_date: str = None):
 
     # Count tickets in previous period
     for t in previous_tickets:
-        topic = t.topic if t.topic else "Other"
-        previous_counts[topic] = previous_counts.get(topic, 0) + 1
+        topic_id = t.topic_id
+
+        if topic_id is None or topic_id not in topic_name_by_id:
+            continue
+
+        previous_counts[topic_id] = previous_counts.get(topic_id, 0) + 1
 
     trends = []
 
-    for topic, count in current_counts.items():
-        previous_count = previous_counts.get(topic, 0)
+    for topic_id, count in current_counts.items():
+        previous_count = previous_counts.get(topic_id, 0)
         diff = count - previous_count
 
         if diff > 0:
@@ -97,14 +108,24 @@ def get_trends(from_date: str = None, to_date: str = None):
             change = "0 vs previous period"
 
         trends.append({
-            "topic": topic,
+            "topic_id": topic_id,
+            "topic": topic_name_by_id[topic_id],
+            "is_active": True,
             "count": count,
             "direction": direction,
             "change": change,
-            "tickets": current_topic_tickets.get(topic, [])
+            "tickets": current_topic_tickets.get(topic_id, [])
         })
 
     trends.sort(key=lambda x: x["count"], reverse=True)
+
+    top_n_raw = os.getenv("TOP_TRENDS_LIMIT", "8").strip()
+    try:
+        top_n = max(1, int(top_n_raw))
+    except ValueError:
+        top_n = 8
+
+    trends = trends[:top_n]
 
     response = {
         "current_period": {

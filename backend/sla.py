@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from time_utils import now_local
 
 def calculate_sla_deadline(created_at: datetime) -> datetime:
     return created_at + timedelta(hours=48)
@@ -8,4 +9,4 @@ def should_be_breached(status: str, sla_deadline: datetime) -> bool:
         return False
     if not sla_deadline:
         return False
-    return datetime.utcnow() > sla_deadline
+    return now_local() > sla_deadline

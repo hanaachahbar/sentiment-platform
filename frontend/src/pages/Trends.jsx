@@ -10,6 +10,20 @@ import {
   Loader,
   Minus
 } from 'lucide-react';
+
+// Inline brand icons (not in this lucide-react version)
+const FbIcon = ({ size = 14, style = {} }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="#1877f2" style={{ flexShrink: 0, ...style }}>
+    <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
+  </svg>
+);
+const IgIcon = ({ size = 14, style = {} }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#c13584" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, ...style }}>
+    <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
+    <circle cx="12" cy="12" r="4" />
+    <circle cx="17.5" cy="6.5" r="1" fill="#c13584" stroke="none" />
+  </svg>
+);
 import { 
   AreaChart, 
   Area, 
@@ -20,7 +34,7 @@ import {
   ResponsiveContainer
 } from 'recharts';
 import logoImg from '../assets/logo.png';
-import { fetchTrends } from '../api';
+import { fetchTrends, renameTopic } from '../api';
 
 const TREND_COLORS = ['#3b82f6', '#0f5132', '#10b981', '#64748b', '#e11d48', '#eab308', '#8b5cf6', '#ec4899'];
 
@@ -30,46 +44,114 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
   const [periodInfo, setPeriodInfo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [renameModal, setRenameModal] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [renameLoading, setRenameLoading] = useState(false);
+  const [renameError, setRenameError] = useState('');
+  const [activePlatform, setActivePlatform] = useState('facebook');
 
-  // Fetch trends from backend
-  useEffect(() => {
-    async function loadTrends() {
+  const loadTrends = async ({ showLoading = true } = {}) => {
+    if (showLoading) {
       setLoading(true);
-      setError(null);
-      try {
-        const data = await fetchTrends();
-        const cards = (data.trends || []).map((t, i) => ({
-          id: t.topic || `trend-${i}`,
-          title: t.topic || 'Unknown Topic',
-          mentions: t.count || 0,
-          change: t.change || '0 vs previous period',
-          direction: t.direction || 'stable',
-          type: t.direction === 'up' ? 'critical' : t.direction === 'down' ? 'declining' : 'stable',
-          color: TREND_COLORS[i % TREND_COLORS.length],
-          progress: Math.min(100, (t.count || 0) * 2), // Rough progress bar
-          comments: (t.tickets || []).map(ticket => ({
-            id: ticket.id,
-            author: ticket.author || 'Unknown',
-            text: ticket.text || '',
-            platform: 'Facebook Post',
-            timestamp: 'Recent',
-            source_link: ticket.source_link || '',
-          })),
-        }));
-        setTrendCards(cards);
-        setPeriodInfo({
-          current: data.current_period,
-          previous: data.previous_period,
-        });
-      } catch (err) {
-        console.error('Trends load error:', err);
-        setError(err.message);
-      } finally {
+    }
+
+    setError(null);
+
+    try {
+      const data = await fetchTrends();
+      const cards = (data.trends || []).map((t, i) => ({
+        id: t.topic_id ?? `trend-${i}`,
+        topicId: t.topic_id ?? null,
+        title: t.topic || 'Unknown Topic',
+        mentions: t.count || 0,
+        change: t.change || '0 vs previous period',
+        direction: t.direction || 'stable',
+        type: t.direction === 'up' ? 'critical' : t.direction === 'down' ? 'declining' : 'stable',
+        color: TREND_COLORS[i % TREND_COLORS.length],
+        progress: Math.min(100, (t.count || 0) * 2),
+        comments: (t.tickets || []).map(ticket => ({
+          id: ticket.id,
+          author: ticket.author || 'Unknown',
+          text: ticket.text || '',
+          platform: 'Facebook Post',
+          timestamp: 'Recent',
+          source_link: ticket.source_link || '',
+        })),
+      }));
+
+      setTrendCards(cards);
+      setPeriodInfo({
+        current: data.current_period,
+        previous: data.previous_period,
+      });
+    } catch (err) {
+      console.error('Trends load error:', err);
+      setError(err.message);
+      throw err;
+    } finally {
+      if (showLoading) {
         setLoading(false);
       }
     }
-    loadTrends();
+  };
+
+  // Fetch trends from backend
+  useEffect(() => {
+    loadTrends().catch(() => {});
   }, []);
+
+  const visibleTrendCards = trendCards.slice(0, 10).map((c, i) => ({
+    ...c,
+    platform: i % 2 === 0 ? 'facebook' : 'instagram',
+  }));
+
+  const openRenameModal = (trend) => {
+    setModalTrend(null);
+    setRenameModal({
+      id: trend.topicId ?? trend.id,
+      color: trend.color,
+      currentName: trend.title,
+    });
+    setRenameValue(trend.title || '');
+    setRenameError('');
+  };
+
+  const closeRenameModal = () => {
+    if (renameLoading) {
+      return;
+    }
+
+    setRenameModal(null);
+    setRenameValue('');
+    setRenameError('');
+  };
+
+  const handleRenameSubmit = async (event) => {
+    event.preventDefault();
+
+    if (!renameModal) {
+      return;
+    }
+
+    const nextName = renameValue.trim();
+    if (!nextName) {
+      setRenameError('Topic name cannot be empty.');
+      return;
+    }
+
+    setRenameLoading(true);
+    setRenameError('');
+
+    try {
+      await renameTopic(renameModal.id, nextName);
+      await loadTrends({ showLoading: false });
+      closeRenameModal();
+    } catch (err) {
+      setRenameError(err.message || 'Failed to rename topic.');
+    } finally {
+      setRenameLoading(false);
+    }
+  };
 
   // Handle cross-page navigation from Dashboard
   useEffect(() => {
@@ -84,17 +166,28 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
 
   // Close modal on Escape
   useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') setModalTrend(null); };
+    const onKey = (e) => {
+      if (e.key !== 'Escape') {
+        return;
+      }
+
+      if (renameModal && !renameLoading) {
+        closeRenameModal();
+        return;
+      }
+
+      setModalTrend(null);
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [closeRenameModal, renameLoading, renameModal]);
 
   // Build chart data from top trends (simulate daily distribution)
   const trendChartData = (() => {
     const days = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
     return days.map((name, i) => {
       const point = { name };
-      trendCards.slice(0, 4).forEach((trend, j) => {
+      visibleTrendCards.slice(0, 4).forEach((trend, j) => {
         // Distribute mentions across days with some variation
         const base = Math.max(1, Math.floor(trend.mentions / 7));
         const variation = Math.floor(Math.random() * base * 0.6);
@@ -157,16 +250,41 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
           </div>
         </div>
 
+        {/* Platform Tabs */}
+        <div className="platform-tabs-row mb-8 stun-item glass-panel" style={{ animationDelay: '0.05s' }}>
+          <button
+            type="button"
+            className={`platform-tab-btn ${activePlatform === 'facebook' ? 'active' : ''}`}
+            data-platform="facebook"
+            onClick={() => setActivePlatform('facebook')}
+          >
+            <FbIcon size={16} style={{ marginRight: '8px' }} /> Facebook Analysis
+          </button>
+          <button
+            type="button"
+            className={`platform-tab-btn ${activePlatform === 'instagram' ? 'active' : ''}`}
+            data-platform="instagram"
+            onClick={() => setActivePlatform('instagram')}
+          >
+            <IgIcon size={16} style={{ marginRight: '8px' }} /> Instagram Analysis
+          </button>
+        </div>
+
         {/* Chart Section */}
         <div className="card glass-panel mb-8 stun-item" style={{ animationDelay: '0.1s' }}>
           <div className="card-header border-none pb-0">
             <div className="card-title">
-              <h3 className="section-heading">Trend Volume over Time</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <h3 className="section-heading" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  {activePlatform === 'facebook' ? <FbIcon size={20} /> : <IgIcon size={20} />}
+                  {activePlatform === 'facebook' ? 'Facebook' : 'Instagram'} Trend Volume over Time
+                </h3>
+              </div>
               <p className="section-sub text-fade mt-1">Granular signal tracking across top trending topics.</p>
             </div>
             <div className="card-action">
               <div className="legend-pills">
-                {trendCards.slice(0, 4).map((t, i) => (
+                {visibleTrendCards.slice(0, 4).map((t, i) => (
                   <span key={t.id} className="legend-pill">
                     <i style={{ backgroundColor: t.color }}></i> {t.title}
                   </span>
@@ -178,7 +296,7 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={trendChartData}>
                 <defs>
-                  {trendCards.slice(0, 4).map((t, i) => (
+                  {visibleTrendCards.slice(0, 4).map((t, i) => (
                     <linearGradient key={`grad-${i}`} id={`colorTrend${i}`} x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor={t.color} stopOpacity={0.3}/>
                       <stop offset="95%" stopColor={t.color} stopOpacity={0}/>
@@ -192,7 +310,7 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
                   contentStyle={{ backgroundColor: 'rgba(15, 28, 46, 0.9)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
                   itemStyle={{ color: '#fff' }}
                 />
-                {trendCards.slice(0, 4).map((t, i) => (
+                {visibleTrendCards.slice(0, 4).map((t, i) => (
                   <Area
                     key={t.id}
                     type="monotone"
@@ -212,7 +330,7 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
 
         {/* Trends Grid — 4 columns, each with 2 preview comments */}
         <div className="trends-4col-grid">
-          {trendCards.length > 0 ? trendCards.map((trend, index) => {
+          {visibleTrendCards.length > 0 ? visibleTrendCards.map((trend, index) => {
             const delta = getDeltaDisplay(trend.change);
             return (
               <div
@@ -226,7 +344,23 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
               >
                 {/* Title + Stats */}
                 <div className="tcf-stats">
-                  <h3 className="tcf-title">{trend.title}</h3>
+                  <div className="tcf-title-row">
+                    <h3 className="tcf-title">{trend.title}</h3>
+                    <button
+                      type="button"
+                      className="tcf-rename-btn"
+                      onClick={() => openRenameModal(trend)}
+                    >
+                      Rename
+                    </button>
+                  </div>
+                  {/* Platform badge */}
+                  <div style={{ marginBottom: '10px' }}>
+                    <span className={`platform-badge-chip ${trend.platform}`}>
+                      {trend.platform === 'facebook' ? <FbIcon size={12} /> : <IgIcon size={12} />}
+                      <span style={{ marginLeft: '4px' }}>{trend.platform === 'facebook' ? 'Facebook' : 'Instagram'}</span>
+                    </span>
+                  </div>
                   <div className="tcf-numbers">
                     <span className="tcf-count" style={{ color: trend.color }}>{trend.mentions}</span>
                     <span className="tcf-unit">mentions</span>
@@ -251,8 +385,8 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
                         <span className="tcf-comment-time">{c.timestamp}</span>
                       </div>
                       <p className="tcf-comment-text">"{c.text}"</p>
-                      {c.fb_link && (
-                        <a href={c.fb_link} target="_blank" rel="noreferrer" className="tcf-reply-link">
+                      {c.source_link && (
+                        <a href={c.source_link} target="_blank" rel="noreferrer" className="tcf-reply-link">
                           <ExternalLink size={12} /> Reply on Facebook
                         </a>
                       )}
@@ -351,6 +485,70 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
         </div>
       )}
 
+      {/* --- RENAME TOPIC MODAL --- */}
+      {renameModal && (
+        <div className="fullscreen-overlay stun-item" onClick={closeRenameModal}>
+          <div
+            className="time-modal-container glass-panel fade-in-up"
+            style={{ maxWidth: '520px' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="time-modal-header" style={{ borderBottom: `2px solid ${renameModal.color}40` }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 800, letterSpacing: '1px', color: renameModal.color, textTransform: 'uppercase' }}>
+                  Edit Topic
+                </span>
+                <h2 className="text-primary" style={{ fontSize: '26px' }}>
+                  Rename Topic
+                </h2>
+                <p className="text-fade" style={{ fontSize: '15px' }}>
+                  Update the label used across posts and trends.
+                </p>
+              </div>
+              <button className="modal-close-btn hover-lift" onClick={closeRenameModal} disabled={renameLoading}>
+                <X size={28} />
+              </button>
+            </div>
+
+            <form onSubmit={handleRenameSubmit} className="rename-topic-form">
+              <label className="rename-topic-label" htmlFor="rename-topic-input">
+                Topic name
+              </label>
+              <input
+                id="rename-topic-input"
+                className="rename-topic-input"
+                type="text"
+                value={renameValue}
+                onChange={(e) => {
+                  setRenameValue(e.target.value);
+                  if (renameError) {
+                    setRenameError('');
+                  }
+                }}
+                placeholder="Fibre installation"
+                autoFocus
+                maxLength={120}
+                disabled={renameLoading}
+              />
+              {renameError && <div className="rename-topic-error">{renameError}</div>}
+              <div className="rename-topic-actions">
+                <button type="button" className="rename-topic-cancel" onClick={closeRenameModal} disabled={renameLoading}>
+                  Cancel
+                </button>
+                <button type="submit" className="rename-topic-save" disabled={renameLoading || !renameValue.trim()}>
+                  {renameLoading ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                      <Loader size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                      Saving...
+                    </span>
+                  ) : 'Save Topic Name'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <style jsx>{`
         /* 4-column trend grid */
         .trends-4col-grid {
@@ -367,10 +565,20 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
           padding: 24px;
           transition: transform 0.3s ease, box-shadow 0.3s ease;
           position: relative;
+          overflow: hidden;
         }
         .trend-card-full:hover {
           transform: translateY(-6px);
           box-shadow: 0 16px 40px -8px var(--trend-color, rgba(0,0,0,0.4));
+        }
+
+        .tcf-title-row {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 10px;
+          min-width: 0;
         }
 
         .tcf-stats {
@@ -380,8 +588,34 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
           font-size: 22px;
           font-weight: 700;
           color: white;
-          margin-bottom: 10px;
+          margin-bottom: 0;
           line-height: 1.3;
+          flex: 1;
+          min-width: 0;
+          max-width: 100%;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          overflow-wrap: anywhere;
+          word-break: break-word;
+        }
+        .tcf-rename-btn {
+          flex-shrink: 0;
+          padding: 8px 12px;
+          border-radius: 9999px;
+          border: 1px solid rgba(83, 152, 255, 0.2);
+          background: transparent;
+          color: rgba(255,255,255,0.8);
+          font-size: 12px;
+          font-weight: 700;
+          transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+        }
+        .tcf-rename-btn:hover {
+          background: rgba(83, 152, 255, 0.08);
+          color: white;
+          border-color: rgba(83, 152, 255, 0.34);
         }
         .tcf-numbers {
           display: flex;
@@ -501,11 +735,11 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
           transition: all 0.25s ease;
         }
         .tcf-show-more-btn:hover {
-          background: var(--trend-color, rgba(255,255,255,0.05));
+          background: rgba(255, 255, 255, 0.04);
           color: white !important;
           border-color: var(--trend-color, rgba(255,255,255,0.3)) !important;
-          transform: translateY(-2px);
-          box-shadow: 0 6px 16px rgba(0,0,0,0.3);
+          transform: none;
+          box-shadow: none;
         }
 
         /* Shared signal item used in modal */
@@ -535,6 +769,81 @@ export default function Trends({ initialTrendId, onClearInitialTrend }) {
           display: flex;
           justify-content: space-between;
           align-items: center;
+        }
+
+        .rename-topic-form {
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+          padding: 28px 40px 34px;
+        }
+        .rename-topic-label {
+          font-size: 13px;
+          font-weight: 700;
+          color: rgba(255,255,255,0.7);
+          letter-spacing: 0.2px;
+        }
+        .rename-topic-input {
+          width: 100%;
+          border-radius: 14px;
+          border: 1px solid rgba(255,255,255,0.14);
+          background: rgba(8, 16, 28, 0.65);
+          color: white;
+          padding: 14px 16px;
+          font-size: 16px;
+          outline: none;
+          transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .rename-topic-input:focus {
+          border-color: var(--trend-color, #5398ff);
+          box-shadow: 0 0 0 3px rgba(83, 152, 255, 0.18);
+        }
+        .rename-topic-input::placeholder {
+          color: rgba(255,255,255,0.35);
+        }
+        .rename-topic-error {
+          color: #fca5a5;
+          font-size: 13px;
+          line-height: 1.4;
+          margin-top: -2px;
+        }
+        .rename-topic-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 10px;
+          margin-top: 2px;
+        }
+        .rename-topic-cancel,
+        .rename-topic-save {
+          padding: 12px 16px;
+          border-radius: 12px;
+          font-size: 14px;
+          font-weight: 700;
+          transition: all 0.2s ease;
+        }
+        .rename-topic-cancel {
+          border: 1px solid rgba(255,255,255,0.12);
+          background: transparent;
+          color: rgba(255,255,255,0.75);
+        }
+        .rename-topic-cancel:hover {
+          background: rgba(255,255,255,0.04);
+          color: white;
+        }
+        .rename-topic-save {
+          border: 1px solid rgba(83, 152, 255, 0.3);
+          background: transparent;
+          color: rgba(255,255,255,0.9);
+        }
+        .rename-topic-save:hover:not(:disabled) {
+          transform: none;
+          box-shadow: none;
+          background: rgba(83, 152, 255, 0.08);
+        }
+        .rename-topic-save:disabled,
+        .rename-topic-cancel:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
         }
 
         /* Legend pills (chart) */

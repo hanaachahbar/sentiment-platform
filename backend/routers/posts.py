@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from database import SessionLocal, Ticket
-from datetime import datetime
 from sqlalchemy import case, and_
+from time_utils import now_local
 
 router = APIRouter()
 
@@ -12,74 +12,86 @@ def get_posts(
     status: str = None,
     is_urgent: bool = None
 ):
+    """
+    Fetch tickets/posts with optional filters.
+    Returns all fields needed by frontend (Feed, SLAAlerts, etc.)
+    """
     db = SessionLocal()
 
     try:
-        effective_category = case(
-            (
-                and_(
-                    Ticket.manually_corrected == True,
-                    Ticket.category_manual.isnot(None),
-                    Ticket.category_manual != ""
-                ),
-                Ticket.category_manual
-            ),
-            else_=Ticket.category
+        now = now_local()
+        overdue_open_tickets = (
+            db.query(Ticket)
+            .filter(Ticket.status == "open")
+            .filter(Ticket.sla_deadline.isnot(None))
+            .all()
         )
+
+        has_updates = False
+        for ticket in overdue_open_tickets:
+            if now > ticket.sla_deadline:
+                ticket.status = "breached"
+                has_updates = True
+
+        if has_updates:
+            db.commit()
 
         query = db.query(Ticket)
 
+        # Apply filters
         if platform:
             query = query.filter(Ticket.platform == platform)
-
-        if category:
-            query = query.filter(effective_category == category)
-
+        
         if status:
             query = query.filter(Ticket.status == status)
-
+        
         if is_urgent is not None:
             query = query.filter(Ticket.is_urgent == is_urgent)
+        
+        # Category filter uses manual category if it exists, else original
+        if category:
+            effective_category = case(
+                (
+                    and_(
+                        Ticket.manually_corrected == True,
+                        Ticket.category_manual.isnot(None),
+                        Ticket.category_manual != ""
+                    ),
+                    Ticket.category_manual
+                ),
+                else_=Ticket.category
+            )
+            query = query.filter(effective_category == category)
 
         tickets = query.all()
 
-        now = datetime.utcnow()
-        updated = False
-
+        # Build response with all required fields
+        result = []
         for t in tickets:
-            if t.status == "open" and t.sla_deadline and now > t.sla_deadline:
-                t.status = "breached"
-                updated = True
-
-        if updated:
-            db.commit()
-
-        response = []
-        for t in tickets:
+            # Use manual category if manually corrected, else original
             final_category = (
                 t.category_manual
                 if t.manually_corrected and t.category_manual
                 else t.category
             )
 
-            response.append({
+            result.append({
                 "id": t.id,
+                "author": t.author or "Unknown",
                 "text": t.text,
-                "author": t.author,
                 "platform": t.platform,
+                "status": t.status,  # 'open', 'resolved', 'breached'
+                "sla_deadline": t.sla_deadline.isoformat() if t.sla_deadline else None,
+                "category": final_category,  # The effective category to display
+                "category_manual": t.category_manual,  # Manual override if exists
+                "manually_corrected": t.manually_corrected or False,
+                "created_at": t.created_at.isoformat() if t.created_at else None,
                 "source_link": t.source_link,
-                "created_at": t.created_at,
-                "category": final_category,          # final category used by frontend
-                "category_original": t.category,     # optional
-                "category_manual": t.category_manual,
-                "manually_corrected": t.manually_corrected,
-                "is_urgent": t.is_urgent,
-                "sla_deadline": t.sla_deadline,
-                "status": t.status,
-                "topic": t.topic
+                "is_urgent": t.is_urgent or False,
+                "topic": t.topic_ref.topic_name if t.topic_ref else "Other",
             })
 
-        return response
+        return result
 
     finally:
         db.close()
